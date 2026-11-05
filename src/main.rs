@@ -69,7 +69,7 @@ extern "C" fn callback_poll_devices() {
                     let info = eng.device_info();
                     let connected = matches!(info.headphone_state, HeadphoneState::Connected(_));
                     let c_name = match &info.headphone_state {
-                        HeadphoneState::Connected(name) => Some(CString::new(name.clone()).unwrap()),
+                        HeadphoneState::Connected(name) => Some(CString::new(name.replace('\0', "")).unwrap_or_default()),
                         _ => None,
                     };
                     micmirror_ui_set_headphone_state(
@@ -92,13 +92,15 @@ fn main() -> Result<()> {
 
     // Default: SoX Baseline (In 32f / Out 128f)
     let initial_preset = DEFAULT_PRESET_INDEX;
-    let mut engine = Box::new(match AudioEngine::new(initial_preset) {
+    // Leak the Box to ensure the engine lives for the entire process lifetime.
+    // micmirror_ui_run() calls [NSApp run] which never returns.
+    let engine = Box::leak(Box::new(match AudioEngine::new(initial_preset) {
         Ok(eng) => eng,
         Err(err) => {
             error!("Failed to initialize audio engine: {:#}", err);
             std::process::exit(1);
         }
-    });
+    }));
 
     let is_active = engine.is_active();
     let initial_vol = engine.get_input_volume();
@@ -106,7 +108,7 @@ fn main() -> Result<()> {
     let is_headphone_connected = matches!(initial_info.headphone_state, HeadphoneState::Connected(_));
 
     unsafe {
-        GLOBAL_ENGINE = &mut *engine;
+        GLOBAL_ENGINE = engine as *mut AudioEngine;
     }
 
     let callbacks = AppCallbacks {
@@ -127,7 +129,7 @@ fn main() -> Result<()> {
         );
 
         let c_name = match &initial_info.headphone_state {
-            HeadphoneState::Connected(name) => Some(CString::new(name.clone()).unwrap()),
+            HeadphoneState::Connected(name) => Some(CString::new(name.replace('\0', "")).unwrap_or_default()),
             _ => None,
         };
         micmirror_ui_set_headphone_state(

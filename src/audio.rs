@@ -1,6 +1,3 @@
-#[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
-compile_error!("MicMirror is exclusively engineered for Apple Silicon macOS (aarch64-apple-darwin).");
-
 use anyhow::{anyhow, Context, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{BufferSize, Device, SampleRate, Stream, StreamConfig};
@@ -99,13 +96,17 @@ impl AudioEngine {
     ) -> Result<()> {
         let (producer, consumer) = RingBuffer::<f32>::new(RING_BUFFER_CAPACITY_FRAMES);
 
-        // Apple Silicon built-in audio natively runs at 48kHz
-        let sample_rate = SampleRate(48000);
-
         let default_in_config = input_device
             .default_input_config()
             .context("Failed to get default input config")?;
         let in_channels = default_in_config.channels();
+
+        // Apple Silicon built-in audio natively runs at 48kHz
+        let sample_rate = SampleRate(48000);
+        let device_rate = default_in_config.sample_rate().0;
+        if device_rate != 48000 {
+            warn!("Expected 48kHz sample rate but device reports {}Hz — audio may not work correctly", device_rate);
+        }
 
         let in_config = StreamConfig {
             channels: in_channels,
@@ -180,7 +181,7 @@ impl AudioEngine {
     pub fn set_input_volume(&self, volume: f32) {
         let clamped = volume.clamp(0.0, 1.5);
         self.input_volume_bits.store(clamped.to_bits(), Ordering::Relaxed);
-        info!("Input volume set to: {:.0}%", clamped * 100.0);
+        log::debug!("Input volume set to: {:.0}%", clamped * 100.0);
     }
 
     pub fn get_input_volume(&self) -> f32 {
@@ -235,7 +236,7 @@ fn find_builtin_microphone(host: &cpal::Host) -> Result<(Device, String)> {
     for device in devices {
         if let Ok(name) = device.name() {
             let lower = name.to_lowercase();
-            if lower.contains("macbook") || lower.contains("built-in") || lower.contains("internal") || lower.contains("microphone") {
+            if lower.contains("macbook") || lower.contains("built-in") || lower.contains("internal") {
                 return Ok((device, name));
             }
         }

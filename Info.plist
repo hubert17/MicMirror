@@ -9,7 +9,7 @@
     <key>CFBundleDisplayName</key>
     <string>MicMirror</string>
     <key>CFBundleExecutable</key>
-    <string>micmirror</string>
+    <string>MicMirror</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleVersion</key>
