@@ -107,6 +107,23 @@ static const BufferPreset BUFFER_PRESETS[7] = {
     }
 }
 
+- (NSString *)formatReverbLabel:(float)val {
+    int pct = (int)(val * 100.0f);
+    if (pct <= 0) {
+        return @"Vocal Reverb: Off";
+    } else if (pct < 25) {
+        return [NSString stringWithFormat:@"Vocal Reverb: %d%% [Small Room]", pct];
+    } else if (pct < 50) {
+        return [NSString stringWithFormat:@"Vocal Reverb: %d%% [Studio]", pct];
+    } else if (pct < 75) {
+        return [NSString stringWithFormat:@"Vocal Reverb: %d%% [Large Hall]", pct];
+    } else if (pct < 95) {
+        return [NSString stringWithFormat:@"Vocal Reverb: %d%% [Concert Hall]", pct];
+    } else {
+        return [NSString stringWithFormat:@"Vocal Reverb: %d%% [Cathedral]", pct];
+    }
+}
+
 // Display only input frame and short description, removing ms delay
 - (NSString *)formatBufferLabel:(uint32_t)index {
     if (index > 6) index = 2;
@@ -246,9 +263,8 @@ static const BufferPreset BUFFER_PRESETS[7] = {
     [cardView addSubview:sep3];
 
     // --- Vocal Reverb Section (Row 4) ---
-    int wetPercent = (int)(initialWet * 100.0f);
     self.reverbLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(14, viewHeight - 176, viewWidth - 28, 16)];
-    self.reverbLabel.stringValue = (wetPercent == 0) ? @"Vocal reverb: Off" : [NSString stringWithFormat:@"Vocal reverb: %d%%", wetPercent];
+    self.reverbLabel.stringValue = [self formatReverbLabel:initialWet];
     self.reverbLabel.font = [NSFont systemFontOfSize:11.5 weight:NSFontWeightRegular];
     self.reverbLabel.textColor = [NSColor labelColor];
     self.reverbLabel.bezeled = NO;
@@ -352,8 +368,7 @@ static const BufferPreset BUFFER_PRESETS[7] = {
 
 - (void)reverbSliderChanged:(NSSlider *)sender {
     float val = sender.floatValue;
-    int pct = (int)(val * 100.0f);
-    self.reverbLabel.stringValue = (pct == 0) ? @"Vocal reverb: Off" : [NSString stringWithFormat:@"Vocal reverb: %d%%", pct];
+    self.reverbLabel.stringValue = [self formatReverbLabel:val];
 
     if (self.callbacks.on_reverb_changed) {
         self.callbacks.on_reverb_changed(val);

@@ -1,13 +1,16 @@
-//! Freeverb implementation tailored for ultra-low latency vocal monitoring at 48kHz.
+//! Enhanced Freeverb with room-size scaling from intimate room to concert hall.
 //!
 //! Architecture:
-//! - 8 Lowpass Feedback Comb Filters (LBFC) in parallel per channel with slight stereo spread.
-//! - 4 Allpass Filters in series per channel for phase diffusion.
-//! - Allocation-free processing in the audio callback.
+//! - Optional pre-delay (0–40ms) simulating distance to first wall reflection.
+//! - 8 parallel lowpass feedback comb filters per channel with stereo spread.
+//! - 4 series allpass filters per channel for dense phase diffusion.
+//! - Soft-clip output limiter for safe headphone monitoring at high reverb.
+//! - Single composite slider maps 0.0–1.0 to musical parameter curves.
 
 const STEREO_SPREAD: usize = 23;
+const MAX_PREDELAY_SAMPLES: usize = 1920; // 40ms at 48kHz
 
-// Comb filter delay lengths tuned for 48kHz (scaled from standard 44.1kHz Freeverb tunings: len * 48000 / 44100)
+// Comb filter delay lengths tuned for 48kHz (scaled from 44.1kHz Freeverb reference)
 const COMB_TUNING_L: [usize; 8] = [1217, 1293, 1417, 1494, 1556, 1653, 1726, 1803];
 const ALLPASS_TUNING_L: [usize; 4] = [245, 372, 480, 606];
 
@@ -35,12 +38,10 @@ impl CombFilter {
         let output = self.buffer[self.buf_idx];
         self.filter_store = output * (1.0 - self.damp) + self.filter_store * self.damp;
         self.buffer[self.buf_idx] = input + self.filter_store * self.feedback;
-
         self.buf_idx += 1;
         if self.buf_idx >= self.buffer.len() {
             self.buf_idx = 0;
         }
-
         output
     }
 
@@ -73,12 +74,40 @@ impl AllpassFilter {
         let buf_out = self.buffer[self.buf_idx];
         let output = -input + buf_out;
         self.buffer[self.buf_idx] = input + buf_out * self.feedback;
-
         self.buf_idx += 1;
         if self.buf_idx >= self.buffer.len() {
             self.buf_idx = 0;
         }
+        output
+    }
+}
 
+struct PreDelay {
+    buffer: Vec<f32>,
+    write_idx: usize,
+    delay_samples: usize,
+}
+
+impl PreDelay {
+    fn new(max_samples: usize) -> Self {
+        Self {
+            buffer: vec![0.0; max_samples + 1],
+            write_idx: 0,
+            delay_samples: 0,
+        }
+    }
+
+    fn set_delay(&mut self, samples: usize) {
+        self.delay_samples = samples.min(self.buffer.len() - 1);
+    }
+
+    #[inline(always)]
+    fn process(&mut self, input: f32) -> f32 {
+        let len = self.buffer.len();
+        self.buffer[self.write_idx] = input;
+        let read_idx = (self.write_idx + len - self.delay_samples) % len;
+        let output = self.buffer[read_idx];
+        self.write_idx = (self.write_idx + 1) % len;
         output
     }
 }
@@ -88,11 +117,14 @@ pub struct Freeverb {
     combs_r: Vec<CombFilter>,
     allpasses_l: Vec<AllpassFilter>,
     allpasses_r: Vec<AllpassFilter>,
+    predelay: PreDelay,
     room_size: f32,
     damp: f32,
     wet: f32,
     dry: f32,
     width: f32,
+    input_scale: f32,
+    last_amount: f32,
 }
 
 impl Freeverb {
@@ -113,43 +145,77 @@ impl Freeverb {
             allpasses_r.push(AllpassFilter::new(len + STEREO_SPREAD));
         }
 
-        let mut verb = Self {
+        Self {
             combs_l,
             combs_r,
             allpasses_l,
             allpasses_r,
-            room_size: 0.7,
-            damp: 0.25,
-            wet: 0.0, // Default off until slider turned up
+            predelay: PreDelay::new(MAX_PREDELAY_SAMPLES),
+            room_size: 0.5,
+            damp: 0.5,
+            wet: 0.0,
             dry: 1.0,
             width: 1.0,
-        };
-
-        verb.update_parameters();
-        verb
+            input_scale: 0.015,
+            last_amount: -1.0, // Force first update
+        }
     }
 
-    pub fn set_wet(&mut self, wet: f32) {
-        self.wet = wet.clamp(0.0, 1.0);
-        // Maintain constant perceived energy: dry stays solid for singing confidence
+    /// Map a 0.0–1.0 slider value to musical reverb parameters.
+    ///
+    /// | Slider  | Room Type    | Wet   | Feedback | Damp | Pre-delay |
+    /// |---------|-------------|-------|----------|------|-----------|
+    /// | 0%      | Off         | 0%    | —        | —    | 0ms       |
+    /// | ~15%    | Small Room  | ~1.2% | 0.80     | 0.61 | ~0.9ms    |
+    /// | ~35%    | Studio      | ~6.7% | 0.83     | 0.48 | ~5ms      |
+    /// | ~55%    | Large Hall  | ~16%  | 0.86     | 0.36 | ~12ms     |
+    /// | ~80%    | Concert Hall| ~35%  | 0.90     | 0.20 | ~26ms     |
+    /// | 100%    | Cathedral   | ~55%  | 0.95     | 0.08 | ~40ms     |
+    pub fn set_reverb_amount(&mut self, amount: f32) {
+        let amount = amount.clamp(0.0, 1.0);
+
+        // Skip update if value hasn't meaningfully changed
+        if (amount - self.last_amount).abs() < 0.001 {
+            return;
+        }
+        self.last_amount = amount;
+
+        if amount <= 0.001 {
+            self.wet = 0.0;
+            self.dry = 1.0;
+            return;
+        }
+
+        // Wet mix: quadratic curve for gentle onset, max ~55%
+        self.wet = amount * amount * 0.55;
+
+        // Room size → comb feedback: 0.30 (small, tight) to 0.95 (cathedral, infinite-ish)
+        // feedback = room_size * 0.28 + 0.7, capped at 0.95
+        self.room_size = 0.30 + amount * 0.65;
+
+        // Damping: 0.70 (absorptive, warm small room) to 0.08 (bright cathedral shimmer)
+        self.damp = 0.70 - amount * 0.62;
+
+        // Stereo width: 0.5 (intimate, mono-ish) to 1.0 (full panoramic spread)
+        self.width = 0.5 + amount * 0.5;
+
+        // Pre-delay: 0ms to ~40ms (quadratic for natural scaling)
+        // Simulates physical distance from voice to first reflecting surface
+        self.predelay
+            .set_delay((amount * amount * MAX_PREDELAY_SAMPLES as f32) as usize);
+
+        // Input gain into comb network: higher for larger spaces to maintain presence
+        self.input_scale = 0.015 + amount * 0.020;
+
+        // Dry stays at 100% — the singer always hears their voice immediately
         self.dry = 1.0;
-    }
 
-    #[allow(dead_code)]
-    pub fn set_room_size(&mut self, size: f32) {
-        self.room_size = size.clamp(0.0, 1.0);
-        self.update_parameters();
-    }
-
-    #[allow(dead_code)]
-    pub fn set_damp(&mut self, damp: f32) {
-        self.damp = damp.clamp(0.0, 1.0);
         self.update_parameters();
     }
 
     fn update_parameters(&mut self) {
-        // Freeverb standard mapping: feedback = room_size * 0.28 + 0.7
-        let feedback = self.room_size * 0.28 + 0.7;
+        // Freeverb standard: feedback = room_size * 0.28 + 0.7
+        let feedback = (self.room_size * 0.28 + 0.7).min(0.95);
         for c in self.combs_l.iter_mut() {
             c.set_feedback(feedback);
             c.set_damp(self.damp);
@@ -160,16 +226,22 @@ impl Freeverb {
         }
     }
 
-    /// Process one mono input sample and produce (out_left, out_right).
+    /// Process one mono input sample → stereo (left, right) with reverb.
+    ///
+    /// The dry path passes through at zero latency. The wet (reverb) tail
+    /// blossoms behind it naturally — no perceivable delay on the direct voice.
     #[inline(always)]
     pub fn process(&mut self, input: f32) -> (f32, f32) {
         if self.wet <= 0.0001 {
             return (input * self.dry, input * self.dry);
         }
 
-        let scaled_in = input * 0.015; // Comb filter input headroom scaling
-        let mut out_l = 0.0;
-        let mut out_r = 0.0;
+        // Pre-delay for spatial depth (only affects wet path)
+        let delayed = self.predelay.process(input);
+        let scaled_in = delayed * self.input_scale;
+
+        let mut out_l = 0.0f32;
+        let mut out_r = 0.0f32;
 
         for c in self.combs_l.iter_mut() {
             out_l += c.process(scaled_in);
@@ -185,13 +257,25 @@ impl Freeverb {
             out_r = a.process(out_r);
         }
 
-        // Stereo width matrixing
-        let wet1 = self.wet * (self.width / 2.0 + 0.5);
-        let wet2 = self.wet * ((1.0 - self.width) / 2.0);
+        // Stereo width matrix
+        let wet1 = self.wet * (self.width * 0.5 + 0.5);
+        let wet2 = self.wet * ((1.0 - self.width) * 0.5);
 
         let left = input * self.dry + out_l * wet1 + out_r * wet2;
         let right = input * self.dry + out_r * wet1 + out_l * wet2;
 
-        (left, right)
+        // Soft-clip to prevent headphone distortion at high reverb + loud input
+        (soft_clip(left), soft_clip(right))
     }
+}
+
+/// Fast tanh approximation (Padé approximant, accurate to ~0.1% for |x| < 3).
+/// Prevents clipping artifacts while preserving natural vocal dynamics.
+#[inline(always)]
+fn soft_clip(x: f32) -> f32 {
+    if x.abs() >= 3.0 {
+        return x.signum();
+    }
+    let x2 = x * x;
+    x * (27.0 + x2) / (27.0 + 9.0 * x2)
 }

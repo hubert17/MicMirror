@@ -310,7 +310,7 @@ fn setup_input_stream(
         move |data: &[f32], _: &cpal::InputCallbackInfo| {
             let volume = f32::from_bits(volume_bits.load(Ordering::Relaxed));
             let wet = f32::from_bits(reverb_wet_bits.load(Ordering::Relaxed));
-            reverb.set_wet(wet);
+            reverb.set_reverb_amount(wet);
 
             for chunk in data.chunks_exact(channels) {
                 let raw_mono: f32 = if channels == 1 {
