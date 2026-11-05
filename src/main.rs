@@ -2,6 +2,7 @@
 compile_error!("MicMirror is exclusively engineered for Apple Silicon macOS (aarch64-apple-darwin).");
 
 mod audio;
+mod reverb;
 
 use anyhow::Result;
 use audio::{AudioEngine, HeadphoneState, DEFAULT_PRESET_INDEX};
@@ -13,6 +14,7 @@ pub struct AppCallbacks {
     pub on_toggle_active: extern "C" fn(bool),
     pub on_buffer_preset_changed: extern "C" fn(u32),
     pub on_input_volume_changed: extern "C" fn(f32),
+    pub on_reverb_changed: extern "C" fn(f32),
     pub on_poll_devices: extern "C" fn(),
     pub on_quit: extern "C" fn(),
 }
@@ -22,6 +24,7 @@ extern "C" {
         callbacks: AppCallbacks,
         initial_preset_idx: u32,
         initial_input_vol: f32,
+        initial_reverb_wet: f32,
         initial_active: bool,
     );
     fn micmirror_ui_set_headphone_state(connected: bool, device_name: *const std::os::raw::c_char);
@@ -54,6 +57,14 @@ extern "C" fn callback_input_volume_changed(volume: f32) {
     unsafe {
         if !GLOBAL_ENGINE.is_null() {
             (*GLOBAL_ENGINE).set_input_volume(volume);
+        }
+    }
+}
+
+extern "C" fn callback_reverb_changed(wet: f32) {
+    unsafe {
+        if !GLOBAL_ENGINE.is_null() {
+            (*GLOBAL_ENGINE).set_reverb_wet(wet);
         }
     }
 }
@@ -104,6 +115,7 @@ fn main() -> Result<()> {
 
     let is_active = engine.is_active();
     let initial_vol = engine.get_input_volume();
+    let initial_reverb = engine.get_reverb_wet();
     let initial_info = engine.device_info().clone();
     let is_headphone_connected = matches!(initial_info.headphone_state, HeadphoneState::Connected(_));
 
@@ -115,6 +127,7 @@ fn main() -> Result<()> {
         on_toggle_active: callback_toggle_active,
         on_buffer_preset_changed: callback_buffer_preset_changed,
         on_input_volume_changed: callback_input_volume_changed,
+        on_reverb_changed: callback_reverb_changed,
         on_poll_devices: callback_poll_devices,
         on_quit: callback_quit,
     };
@@ -125,6 +138,7 @@ fn main() -> Result<()> {
             callbacks,
             initial_preset as u32,
             initial_vol,
+            initial_reverb,
             is_active,
         );
 

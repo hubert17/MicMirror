@@ -65,6 +65,8 @@ static const BufferPreset BUFFER_PRESETS[7] = {
 @property (nonatomic, strong) NSTextField *bufferLabel;
 @property (nonatomic, strong) NSSlider *inputVolumeSlider;
 @property (nonatomic, strong) NSTextField *inputVolumeLabel;
+@property (nonatomic, strong) NSSlider *reverbSlider;
+@property (nonatomic, strong) NSTextField *reverbLabel;
 @property (nonatomic, strong) NSTextField *statusLabel;
 @property (nonatomic, strong) NSTimer *pollTimer;
 @property (nonatomic, assign) AppCallbacks callbacks;
@@ -78,6 +80,7 @@ static const BufferPreset BUFFER_PRESETS[7] = {
 - (instancetype)initWithCallbacks:(AppCallbacks)callbacks
                initialPresetIndex:(uint32_t)presetIdx
                   initialInputVol:(float)initialVol
+                 initialReverbWet:(float)initialWet
                     initialActive:(BOOL)initialActive {
     self = [super init];
     if (self) {
@@ -86,7 +89,7 @@ static const BufferPreset BUFFER_PRESETS[7] = {
         _isActive = initialActive;
         _currentDeviceDisplayName = @"3.5mm Headphone Jack";
 
-        [self setupUIWithPresetIndex:presetIdx initialVol:initialVol active:initialActive];
+        [self setupUIWithPresetIndex:presetIdx initialVol:initialVol initialWet:initialWet active:initialActive];
 
         // Periodic timer on Main RunLoop to poll headphone connection state (1 Hz)
         _pollTimer = [NSTimer scheduledTimerWithTimeInterval:1.0
@@ -111,7 +114,7 @@ static const BufferPreset BUFFER_PRESETS[7] = {
     return [NSString stringWithFormat:@"Buffer: %u frames [%s]", p.in_frames, p.tag];
 }
 
-- (void)setupUIWithPresetIndex:(uint32_t)presetIdx initialVol:(float)initialVol active:(BOOL)initialActive {
+- (void)setupUIWithPresetIndex:(uint32_t)presetIdx initialVol:(float)initialVol initialWet:(float)initialWet active:(BOOL)initialActive {
     // 1. Status Bar Item
     self.statusItem = [[NSStatusBar systemStatusBar] statusItemWithLength:NSSquareStatusItemLength];
     NSStatusBarButton *button = self.statusItem.button;
@@ -131,7 +134,7 @@ static const BufferPreset BUFFER_PRESETS[7] = {
     menu.minimumWidth = 280.0;
 
     CGFloat viewWidth = 280.0;
-    CGFloat viewHeight = 176.0;
+    CGFloat viewHeight = 224.0;
     NSView *cardView = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, viewWidth, viewHeight)];
 
     // --- Header Section (Row 1) ---
@@ -237,7 +240,40 @@ static const BufferPreset BUFFER_PRESETS[7] = {
     if (imgHigh) { [imgHigh setTemplate:YES]; micHigh.image = imgHigh; }
     [cardView addSubview:micHigh];
 
-    // --- Status Section (Row 4, properly aligned with X = 14 and comfortable vertical margin) ---
+    // Separator 3
+    NSBox *sep3 = [[NSBox alloc] initWithFrame:NSMakeRect(14, viewHeight - 156, viewWidth - 28, 1)];
+    sep3.boxType = NSBoxSeparator;
+    [cardView addSubview:sep3];
+
+    // --- Vocal Reverb Section (Row 4) ---
+    int wetPercent = (int)(initialWet * 100.0f);
+    self.reverbLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(14, viewHeight - 176, viewWidth - 28, 16)];
+    self.reverbLabel.stringValue = (wetPercent == 0) ? @"Vocal reverb: Off" : [NSString stringWithFormat:@"Vocal reverb: %d%%", wetPercent];
+    self.reverbLabel.font = [NSFont systemFontOfSize:11.5 weight:NSFontWeightRegular];
+    self.reverbLabel.textColor = [NSColor labelColor];
+    self.reverbLabel.bezeled = NO;
+    self.reverbLabel.drawsBackground = NO;
+    self.reverbLabel.editable = NO;
+    self.reverbLabel.selectable = NO;
+    [cardView addSubview:self.reverbLabel];
+
+    // Left spark/reverb icon
+    NSImageView *verbLow = [[NSImageView alloc] initWithFrame:NSMakeRect(14, viewHeight - 196, 14, 14)];
+    NSImage *imgVerbLow = [NSImage imageWithSystemSymbolName:@"sparkles" accessibilityDescription:nil];
+    if (imgVerbLow) { [imgVerbLow setTemplate:YES]; verbLow.image = imgVerbLow; }
+    [cardView addSubview:verbLow];
+
+    // Reverb slider (0.0 to 1.0)
+    self.reverbSlider = [[NSSlider alloc] initWithFrame:NSMakeRect(32, viewHeight - 198, viewWidth - 46, 18)];
+    self.reverbSlider.minValue = 0.0;
+    self.reverbSlider.maxValue = 1.0;
+    self.reverbSlider.floatValue = initialWet;
+    self.reverbSlider.continuous = YES;
+    self.reverbSlider.target = self;
+    self.reverbSlider.action = @selector(reverbSliderChanged:);
+    [cardView addSubview:self.reverbSlider];
+
+    // --- Status Section (Row 5) ---
     self.statusLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(14, 6, viewWidth - 28, 16)];
     self.statusLabel.stringValue = @"● 3.5mm Headphone Jack Connected";
     self.statusLabel.font = [NSFont systemFontOfSize:11.0 weight:NSFontWeightMedium];
@@ -314,6 +350,16 @@ static const BufferPreset BUFFER_PRESETS[7] = {
     }
 }
 
+- (void)reverbSliderChanged:(NSSlider *)sender {
+    float val = sender.floatValue;
+    int pct = (int)(val * 100.0f);
+    self.reverbLabel.stringValue = (pct == 0) ? @"Vocal reverb: Off" : [NSString stringWithFormat:@"Vocal reverb: %d%%", pct];
+
+    if (self.callbacks.on_reverb_changed) {
+        self.callbacks.on_reverb_changed(val);
+    }
+}
+
 - (void)quitClicked:(id)sender {
     if (self.callbacks.on_quit) {
         self.callbacks.on_quit();
@@ -357,6 +403,7 @@ void micmirror_ui_init(
     AppCallbacks callbacks,
     uint32_t initial_preset_idx,
     float initial_input_vol,
+    float initial_reverb_wet,
     bool initial_active
 ) {
     [NSApplication sharedApplication];
@@ -365,6 +412,7 @@ void micmirror_ui_init(
     g_menuController = [[MicMirrorMenuController alloc] initWithCallbacks:callbacks
                                                        initialPresetIndex:initial_preset_idx
                                                           initialInputVol:initial_input_vol
+                                                         initialReverbWet:initial_reverb_wet
                                                             initialActive:initial_active];
 }
 

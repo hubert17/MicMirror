@@ -12,6 +12,7 @@ typedef struct {
     void (* _Nonnull on_toggle_active)(bool active);
     void (* _Nonnull on_buffer_preset_changed)(uint32_t index);
     void (* _Nonnull on_input_volume_changed)(float volume);
+    void (* _Nonnull on_reverb_changed)(float wet);
     void (* _Nonnull on_poll_devices)(void);
     void (* _Nonnull on_quit)(void);
 } AppCallbacks;
@@ -21,6 +22,7 @@ void micmirror_ui_init(
     AppCallbacks callbacks,
     uint32_t initial_preset_idx,
     float initial_input_vol,
+    float initial_reverb_wet,
     bool initial_active
 );
 

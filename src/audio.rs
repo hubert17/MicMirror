@@ -1,3 +1,4 @@
+use crate::reverb::Freeverb;
 use anyhow::{anyhow, Context, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{BufferSize, Device, SampleRate, Stream, StreamConfig};
@@ -6,7 +7,7 @@ use rtrb::{Consumer, Producer, RingBuffer};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 
-pub const RING_BUFFER_CAPACITY_FRAMES: usize = 1024;
+pub const RING_BUFFER_CAPACITY_FRAMES: usize = 2048;
 
 // (Input frames, Output frames)
 pub const BUFFER_PRESETS: [(u32, u32); 7] = [
@@ -42,6 +43,7 @@ pub struct AudioEngine {
     is_active: Arc<AtomicBool>,
     safety_lockout: Arc<AtomicBool>,
     input_volume_bits: Arc<AtomicU32>, // f32 stored as u32 bits (0.0 to 1.5)
+    reverb_wet_bits: Arc<AtomicU32>,   // f32 stored as u32 bits (0.0 to 1.0)
     current_device_info: DeviceInfo,
     current_preset_index: usize,
 }
@@ -51,6 +53,7 @@ impl AudioEngine {
         let is_active = Arc::new(AtomicBool::new(true));
         let safety_lockout = Arc::new(AtomicBool::new(false));
         let input_volume_bits = Arc::new(AtomicU32::new(0.75f32.to_bits())); // Default 75% volume
+        let reverb_wet_bits = Arc::new(AtomicU32::new(0.0f32.to_bits()));    // Default 0% (off)
 
         let host = cpal::default_host();
         let (input_device, input_name) = find_builtin_microphone(&host)?;
@@ -75,6 +78,7 @@ impl AudioEngine {
             is_active,
             safety_lockout,
             input_volume_bits,
+            reverb_wet_bits,
             current_device_info: device_info,
             current_preset_index: initial_preset_index.min(BUFFER_PRESETS.len() - 1),
         };
@@ -137,6 +141,7 @@ impl AudioEngine {
             &in_config,
             producer,
             self.input_volume_bits.clone(),
+            self.reverb_wet_bits.clone(),
         )?;
         let output_stream = setup_output_stream(
             output_device,
@@ -186,6 +191,16 @@ impl AudioEngine {
 
     pub fn get_input_volume(&self) -> f32 {
         f32::from_bits(self.input_volume_bits.load(Ordering::Relaxed))
+    }
+
+    pub fn set_reverb_wet(&self, wet: f32) {
+        let clamped = wet.clamp(0.0, 1.0);
+        self.reverb_wet_bits.store(clamped.to_bits(), Ordering::Relaxed);
+        log::debug!("Reverb wet set to: {:.0}%", clamped * 100.0);
+    }
+
+    pub fn get_reverb_wet(&self) -> f32 {
+        f32::from_bits(self.reverb_wet_bits.load(Ordering::Relaxed))
     }
 
     pub fn set_active(&self, active: bool) {
@@ -285,13 +300,17 @@ fn setup_input_stream(
     config: &StreamConfig,
     mut producer: Producer<f32>,
     volume_bits: Arc<AtomicU32>,
+    reverb_wet_bits: Arc<AtomicU32>,
 ) -> Result<Stream> {
     let channels = config.channels as usize;
+    let mut reverb = Freeverb::new();
 
     let stream = device.build_input_stream(
         config,
         move |data: &[f32], _: &cpal::InputCallbackInfo| {
             let volume = f32::from_bits(volume_bits.load(Ordering::Relaxed));
+            let wet = f32::from_bits(reverb_wet_bits.load(Ordering::Relaxed));
+            reverb.set_wet(wet);
 
             for chunk in data.chunks_exact(channels) {
                 let raw_mono: f32 = if channels == 1 {
@@ -304,7 +323,13 @@ fn setup_input_stream(
 
                 // Apply input volume / gain
                 let scaled_sample = raw_mono * volume;
-                let _ = producer.push(scaled_sample);
+
+                // Process through stereo reverb
+                let (out_l, out_r) = reverb.process(scaled_sample);
+
+                // Push stereo interleaved into ring buffer
+                let _ = producer.push(out_l);
+                let _ = producer.push(out_r);
             }
         },
         |err| error!("CoreAudio input stream error: {}", err),
@@ -339,17 +364,18 @@ fn setup_output_stream(
             }
 
             for frame in data.chunks_exact_mut(channels) {
-                match consumer.pop() {
-                    Ok(sample) => {
-                        for ch in frame.iter_mut() {
-                            *ch = sample;
-                        }
+                if channels >= 2 {
+                    let left = consumer.pop().unwrap_or(0.0);
+                    let right = consumer.pop().unwrap_or(0.0);
+                    frame[0] = left;
+                    frame[1] = right;
+                    for ch in &mut frame[2..] {
+                        *ch = 0.0;
                     }
-                    Err(_) => {
-                        for ch in frame.iter_mut() {
-                            *ch = 0.0;
-                        }
-                    }
+                } else if channels == 1 {
+                    let left = consumer.pop().unwrap_or(0.0);
+                    let right = consumer.pop().unwrap_or(0.0);
+                    frame[0] = (left + right) * 0.5;
                 }
             }
         },
