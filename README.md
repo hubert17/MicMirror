@@ -1,31 +1,32 @@
 # MicMirror
 
-**Ultra-low latency real-time microphone monitoring (sidetone) for macOS Apple Silicon.**
+**Ultra-low latency real-time microphone monitoring (sidetone) & vocal reverberation for macOS Apple Silicon.**
 
 MicMirror replicates and refines the zero-perceivable-latency loopback behavior of:
 ```bash
 sox -V0 --multi-threaded --input-buffer 32 --buffer 128 -d -d
 ```
-packaged into a lightweight, native macOS menu bar application with acoustic safety guards and volume controls.
+packaged into a lightweight, native macOS menu bar application with real-time vocal reverb DSP, acoustic safety guards, and integrated gain controls.
 
 ---
 
 ## Why MicMirror?
 
-When wearing closed-back headphones or in-ear monitors (IEMs), the **occlusion effect** dampens your perception of your own voice, often causing vocal strain, loud speaking, or speech hesitation. Traditional software passthrough solutions introduce distracting 15–50 ms delays that make natural speaking impossible.
+When wearing closed-back headphones or in-ear monitors (IEMs), the **occlusion effect** dampens your perception of your own voice, often causing vocal strain, loud speaking, or speech hesitation. Traditional software passthrough solutions introduce distracting 15–50 ms delays that make natural speaking or singing impossible.
 
-MicMirror delivers **sub-4 ms round-trip hardware monitoring** by pairing Apple Silicon's motherboard-level audio DMA with lock-free real-time audio threads.
+MicMirror delivers **sub-4 ms round-trip hardware monitoring** by pairing Apple Silicon's motherboard-level audio DMA with lock-free real-time audio threads, now with an optional **Freeverb vocal DSP engine** for singing practice.
 
 ---
 
 ## Visual Interface
 
-MicMirror lives exclusively in your menu bar (`LSUIElement = true`) with a modern, native AppKit card interface:
+MicMirror lives exclusively in your menu bar (`LSUIElement = true`) with a purple squircle headphone tray icon and a native AppKit card interface:
 
 ```
 ┌────────────────────────────────────────────────────────┐
-│  [🎙️] MicMirror                     [   ON / OFF 🟢 ]    │  <-- Persistent Apple Green
-│      Apple Silicon 3.5mm Sidetone                      │
+│  [🎧] MicMirror                     [   ON / OFF 🟢 ]    │  <-- Persistent Apple Green Switch
+│      Zero-Latency Sidetone                             │
+│      ● 3.5mm Headphone Jack Connected                  │  <-- Integrated Hardware State
 ├────────────────────────────────────────────────────────┤
 │  Buffer: 32 frames [SoX Baseline]                      │  <-- 7-Tick Snap Slider
 │  [ 16 ── 24 ──●── 48 ── 64 ── 128 ── 256 ]             │
@@ -33,8 +34,10 @@ MicMirror lives exclusively in your menu bar (`LSUIElement = true`) with a moder
 │  Input volume: 75%                                     │  <-- Real-time Gain Slider
 │  🎙️ [ ─────────────●───────────── ] 🎙️                  │
 ├────────────────────────────────────────────────────────┤
-│  ● External Headphones Connected                       │  <-- Hardware State
-│  ───────────────────────────────────────────────────── │
+│  Vocal Reverb: Off (or Small Room ➔ Cathedral)         │  <-- Real-time Reverb DSP
+│  ✨ [ ──────●──────────────────── ]                    │
+├────────────────────────────────────────────────────────┤
+│  About MicMirror...                                    │  <-- GitHub Repository Link
 │  Quit MicMirror                                    ⌘Q  │
 └────────────────────────────────────────────────────────┘
 ```
@@ -43,12 +46,18 @@ MicMirror lives exclusively in your menu bar (`LSUIElement = true`) with a moder
 
 ## Key Features
 
-- **Apple Silicon Hardware Lock**: Exclusively targets `aarch64-apple-darwin`. Eliminates USB controller polling delays and shared USB bus jitter by interfacing directly with Apple's internal audio controller.
+- **Apple Silicon Hardware Lock**: Exclusively targets `aarch64-apple-darwin`. Interfacing directly with Apple's internal audio controller eliminates USB controller polling delays and bus jitter.
 - **Zero Clock Drift**: Built-in microphone array and the 3.5mm headphone DAC are driven by the exact same motherboard crystal oscillator—eliminating sample slippage and drift compensation overhead.
-- **Exact SoX Default Parity**: Opens by default with **32 frames input** and **128 frames output** at 48 kHz.
+- **Exact SoX Default Parity**: Opens by default with **32 frames input** and **128 frames output** at 48 kHz (~3.3 ms round-trip delay).
+- **Vocal Reverb DSP (Freeverb)**:
+  - 8 parallel lowpass comb filters + 4 series allpass filters per channel with stereo spread and pre-delay (up to 40ms).
+  - Continuous musical scaling: `Off` ➔ `Small Room` ➔ `Studio` ➔ `Large Hall` ➔ `Concert Hall` ➔ `Cathedral`.
+  - **Zero latency dry voice**: Direct voice stays 100% dry and sub-4ms, while lush acoustic reverberations blossom naturally behind it.
+  - Soft-clip limiter protects against digital clipping during loud vocal belts.
 - **Acoustic Feedback Protection (Auto-Mute)**: If 3.5mm headphones are unplugged, the app immediately disengages the audio stream to prevent dangerous high-pitched feedback squeal between the built-in mic and MacBook speakers.
 - **Lock-Free, Real-Time Audio**: Powered by [`rtrb`](https://crates.io/crates/rtrb) (wait-free, zero heap allocation, cache-line padded against false sharing).
-- **Persistent Apple Green Switch**: Custom Cocoa switch integration that stays vibrant system green whenever monitoring is active.
+- **Custom `CALayer` Apple Green Switch**: Custom Cocoa toggle that guarantees persistent Apple system green whenever monitoring is active, even when closing and reopening the menu.
+- **Purple Squircle Headphone Tray Icon**: Features an electric purple badge with a white `headphones` symbol that dynamically dims when muted.
 - **Integrated Input Volume**: Adjust your microphone gain directly inside the menu bar without opening **System Settings → Sound**.
 
 ---
@@ -74,22 +83,34 @@ The slider features 7 discrete tick marks to customize your buffer based on stab
 ```
 ┌────────────────────────────────────────────────────────┐
 │                   macOS Menu Bar UI                    │
-│        (Native AppKit NSStatusItem + Custom NSView)    │
-│    [GreenSwitch Toggle] [Buffer Slider] [Input Volume] │
+│      (Native AppKit NSStatusItem + Custom Card View)   │
+│   [GreenSwitch] [Buffer Slider] [Gain] [Vocal Reverb]  │
 └──────────────────────────┬─────────────────────────────┘
                            │ Lock-Free Atomics (0.000 ms overhead)
                            ▼
 ┌────────────────────────────────────────────────────────┐
 │                 MicMirror Audio Engine                 │
 │                                                        │
-│  ┌───────────────────────┐   Push (Mono)  ┌─────────┐ │
-│  │ CoreAudio Input (HAL) │───────────────►│  rtrb   │ │
-│  │ In: 32 frames (0.67ms)│                │  Ring   │ │
-│  └───────────────────────┘                │ Buffer  │ │
-│                                           │  (SPSC) │ │
-│  ┌───────────────────────┐   Pop (Stereo) │         │ │
-│  │ CoreAudio Output(HAL) │◄───────────────┤         │ │
-│  │ Out:128 frames (2.67ms│                └─────────┘ │
+│  ┌───────────────────────┐                             │
+│  │ CoreAudio Input (HAL) │                             │
+│  │ In: 32 frames (0.67ms)│                             │
+│  └───────────┬───────────┘                             │
+│              │ Mono Mic Samples                        │
+│              ▼                                         │
+│  ┌───────────────────────┐                             │
+│  │   Vocal Reverb DSP    │ (Freeverb + PreDelay)       │
+│  │  Dry 100% + Wet Tail  │                             │
+│  └───────────┬───────────┘                             │
+│              │ Stereo Push                             │
+│              ▼                                         │
+│  ┌───────────────────────┐                             │
+│  │  rtrb Ring Buffer     │ (Wait-free SPSC)            │
+│  └───────────┬───────────┘                             │
+│              │ Stereo Pop                              │
+│              ▼                                         │
+│  ┌───────────────────────┐                             │
+│  │ CoreAudio Output(HAL) │                             │
+│  │ Out:128 frames(2.67ms)│                             │
 │  └───────────────────────┘                             │
 │                                                        │
 │  [Auto-Mute Guard] Disables stream if 3.5mm unplugged  │
@@ -97,7 +118,7 @@ The slider features 7 discrete tick marks to customize your buffer based on stab
 ```
 
 - **Thread Separation**: AppKit controls live on the Cocoa Main Thread. CoreAudio runs on Mach real-time scheduled threads (`THREAD_TIME_CONSTRAINT_POLICY`). UI actions write to atomic primitives; the audio callback never blocks, allocates, or waits for locks.
-- **Channel Conversion**: Downmixes microphone input array to mono and duplicates across Left and Right headphone channels for naturally centered voice positioning.
+- **Channel Conversion**: Downmixes microphone input array to mono, passes through stereo reverb diffusion, and outputs pristine stereo audio into headphones.
 
 ---
 
@@ -110,16 +131,20 @@ The slider features 7 discrete tick marks to customize your buffer based on stab
 
 ---
 
-## Building and Running
+## Building and Packaging
 
-### 1. Clone & Build
-Run the automated packaging script to build in release mode, bundle the `.app`, attach `Info.plist`, and apply an ad-hoc signature:
-
+### 1. Build .app Bundle
 ```bash
 ./scripts/build_app.sh
 ```
 
-### 2. Launch
+### 2. Package Drag-and-Drop .dmg Installer
+```bash
+./scripts/create_dmg.sh
+```
+This produces `target/release/MicMirror-macos-arm64.dmg` with an `/Applications` symlink ready for distribution.
+
+### 3. Launch App Locally
 ```bash
 open target/release/MicMirror.app
 ```
@@ -129,6 +154,9 @@ open target/release/MicMirror.app
 ---
 
 ## Frequently Asked Questions (FAQ)
+
+#### Does this work alongside Zoom, Teams, or Google Meet?
+**Yes.** CoreAudio natively permits multiple applications to read from the microphone concurrently. Meeting participants will only hear your raw microphone audio (or conferencing noise suppression); they will not hear your local MicMirror sidetone or reverb.
 
 #### Why does MicMirror only run on the 3.5mm headphone jack?
 1. **Hearing Safety**: If zero-latency monitoring runs through built-in speakers while the built-in mic is live, it creates an immediate acoustic feedback squeal.
