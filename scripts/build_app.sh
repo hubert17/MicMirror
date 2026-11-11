@@ -18,6 +18,15 @@ RESOURCES_DIR="${CONTENTS_DIR}/Resources"
 # Terminate any previously running instance so the new version launches cleanly
 killall "${APP_NAME}" 2>/dev/null || true
 
+# Ensure AppIcon.icns exists or generate it
+if [ ! -f "assets/AppIcon.icns" ] && [ -f "scripts/generate_icon.swift" ]; then
+    echo "=== Generating AppIcon.icns ==="
+    mkdir -p assets
+    swift scripts/generate_icon.swift
+    iconutil -c icns /tmp/AppIcon.iconset -o assets/AppIcon.icns
+    rm -rf /tmp/AppIcon.iconset
+fi
+
 echo "=== Building ${APP_NAME} in release mode ==="
 cargo build --release
 
@@ -37,6 +46,11 @@ chmod +x "${MACOS_DIR}/${APP_NAME}"
 
 # Copy Info.plist
 cp "Info.plist" "${CONTENTS_DIR}/Info.plist"
+
+# Copy AppIcon.icns if present
+if [ -f "assets/AppIcon.icns" ]; then
+    cp "assets/AppIcon.icns" "${RESOURCES_DIR}/AppIcon.icns"
+fi
 
 # Ad-hoc code sign for macOS local microphone permission granting
 echo "=== Ad-hoc signing ${APP_NAME}.app for local execution ==="
