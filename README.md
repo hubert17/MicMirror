@@ -18,6 +18,31 @@ MicMirror delivers **sub-4 ms round-trip hardware monitoring** by pairing Apple 
 
 ---
 
+## Quick Start (For Casual Users)
+
+### 1. Requirements
+* **Mac**: Apple Silicon (`M1`, `M2`, `M3`, `M4` or later including MacBook Neo).
+* **Headphones**: Any 3.5mm analog wired headphones or headset plugged into your Mac's **BUILT-IN audio jack** (USB dongles or Bluetooth are not supported due to latency).
+
+### 2. Download & Install
+1. Download the latest **`MicMirror-macos-arm64.dmg`** from [**Releases**](https://github.com/hubert17/MicMirror/releases/latest).
+2. Open the downloaded `.dmg` file and drag **MicMirror** into your **Applications** folder.
+
+### 3. First Launch (macOS Gatekeeper Guide)
+Because MicMirror is an independent open-source project without a paid corporate Apple certificate, macOS will show a security message on first launch (*"Apple could not verify MicMirror..."*):
+
+* **How to open it (one-time only):**
+  1. Open your **Applications** folder in Finder.
+  2. **Right-click** (or hold `Control` and click) on **MicMirror**.
+  3. Click **Open** from the context menu.
+  4. Click **Open** in the confirmation prompt.
+  *(Alternatively, go to **System Settings ➔ Privacy & Security**, scroll to Security, and click **Open Anyway**).*
+
+### 4. Grant Microphone Permission
+On initial launch, macOS will ask for permission to access the **Microphone**. Click **OK** so MicMirror can capture your voice and loop it to your headphones in real time.
+
+---
+
 ## Visual Interface
 
 MicMirror lives exclusively in your menu bar (`LSUIElement = true`) with a purple squircle headphone tray icon and a native AppKit card interface:
