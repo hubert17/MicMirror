@@ -181,7 +181,61 @@ static const BufferPreset BUFFER_PRESETS[7] = {
     }
 }
 
-// Display only input frame and short description, removing ms delay
+- (NSImage *)createStatusBarBadgeImageActive:(BOOL)active {
+    NSSize size = NSMakeSize(22.0, 22.0);
+    NSImage *image = [NSImage imageWithSize:size flipped:NO drawingHandler:^BOOL(NSRect dstRect) {
+        // Draw squircle / rounded rect background
+        NSRect bgRect = NSInsetRect(dstRect, 1.0, 1.0);
+        NSBezierPath *path = [NSBezierPath bezierPathWithRoundedRect:bgRect xRadius:6.0 yRadius:6.0];
+
+        if (active) {
+            // Vibrant electric purple (#8A2BE2 / Apple systemPurpleColor)
+            NSColor *purpleColor = [NSColor colorWithCalibratedRed:0.58 green:0.20 blue:0.92 alpha:1.0];
+            [purpleColor setFill];
+        } else {
+            // Muted neutral gray for inactive/off
+            NSColor *grayColor = [NSColor colorWithCalibratedWhite:0.45 alpha:0.65];
+            [grayColor setFill];
+        }
+        [path fill];
+
+        // Draw white "waveform.and.mic" SF Symbol inside
+        NSImage *symbol = [NSImage imageWithSystemSymbolName:@"waveform.and.mic" accessibilityDescription:@"MicMirror"];
+        if (!symbol) {
+            symbol = [NSImage imageWithSystemSymbolName:@"mic.fill" accessibilityDescription:@"MicMirror"];
+        }
+
+        if (symbol) {
+            NSRect symbolRect = NSMakeRect(3.5, 3.5, 15.0, 15.0);
+            NSImageRep *rep = [symbol bestRepresentationForRect:symbolRect context:nil hints:nil];
+            if (rep) {
+                // Tint symbol pure white
+                NSImage *tinted = [NSImage imageWithSize:symbolRect.size flipped:NO drawingHandler:^BOOL(NSRect r) {
+                    [symbol drawInRect:r fromRect:NSZeroRect operation:NSCompositingOperationSourceOver fraction:1.0];
+                    [[NSColor whiteColor] setFill];
+                    NSRectFillUsingOperation(r, NSCompositingOperationSourceIn);
+                    return YES;
+                }];
+                [tinted drawInRect:symbolRect fromRect:NSZeroRect operation:NSCompositingOperationSourceOver fraction:1.0];
+            } else {
+                [symbol drawInRect:symbolRect];
+            }
+        }
+        return YES;
+    }];
+
+    // Do NOT set template:YES, so the full rich purple color renders on the menu bar!
+    image.template = NO;
+    return image;
+}
+
+- (void)updateStatusItemIcon {
+    NSStatusBarButton *button = self.statusItem.button;
+    if (button) {
+        BOOL isFullyActive = self.isActive && !self.isLocked;
+        button.image = [self createStatusBarBadgeImageActive:isFullyActive];
+    }
+}
 - (NSString *)formatBufferLabel:(uint32_t)index {
     if (index > 6) index = 2;
     BufferPreset p = BUFFER_PRESETS[index];
@@ -191,16 +245,7 @@ static const BufferPreset BUFFER_PRESETS[7] = {
 - (void)setupUIWithPresetIndex:(uint32_t)presetIdx initialVol:(float)initialVol initialWet:(float)initialWet active:(BOOL)initialActive {
     // 1. Status Bar Item
     self.statusItem = [[NSStatusBar systemStatusBar] statusItemWithLength:NSSquareStatusItemLength];
-    NSStatusBarButton *button = self.statusItem.button;
-    if (button) {
-        NSImage *icon = [NSImage imageWithSystemSymbolName:@"mic.fill" accessibilityDescription:@"MicMirror"];
-        if (icon) {
-            [icon setTemplate:YES];
-            button.image = icon;
-        } else {
-            button.title = @"🎤";
-        }
-    }
+    [self updateStatusItemIcon];
 
     // 2. Menu and Custom Card Container
     NSMenu *menu = [[NSMenu alloc] init];
@@ -395,6 +440,7 @@ static const BufferPreset BUFFER_PRESETS[7] = {
     }
     BOOL active = (sender.state == NSControlStateValueOn);
     self.isActive = active;
+    [self updateStatusItemIcon];
 
     if (self.callbacks.on_toggle_active) {
         self.callbacks.on_toggle_active(active);
@@ -457,6 +503,7 @@ static const BufferPreset BUFFER_PRESETS[7] = {
             self.toggleSwitch.enabled = NO;
         }
         [self.toggleSwitch updateColorsAnimated:NO];
+        [self updateStatusItemIcon];
     });
 }
 
@@ -465,6 +512,7 @@ static const BufferPreset BUFFER_PRESETS[7] = {
         self.isActive = active;
         self.toggleSwitch.state = active ? NSControlStateValueOn : NSControlStateValueOff;
         [self.toggleSwitch updateColorsAnimated:NO];
+        [self updateStatusItemIcon];
     });
 }
 
