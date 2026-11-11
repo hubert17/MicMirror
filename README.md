@@ -127,7 +127,7 @@ The slider features 7 discrete tick marks to customize your buffer based on stab
 
 ## System Requirements
 
-- **Mac**: Apple Silicon (`M1`, `M2`, `M3`, `M4`, `A18 Pro` MacBook Neo, or later)
+- **Mac**: Apple Silicon (`M1`, `M2`, `M3`, `M4` or later including MacBook Neo)
 - **OS**: macOS 12 (Monterey) or later
 - **Output Device**: 3.5mm analog headphones or headset plugged into the BUILT-IN audio jack
 - **Build Requirements**: Rust toolchain (`cargo`, `rustc`), Xcode Command Line Tools
