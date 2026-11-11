@@ -248,13 +248,32 @@ impl AudioEngine {
 
 fn find_builtin_microphone(host: &cpal::Host) -> Result<(Device, String)> {
     let devices = host.input_devices().context("Failed to query input devices")?;
+    let mut headset_mic: Option<(Device, String)> = None;
+    let mut internal_mic: Option<(Device, String)> = None;
+
     for device in devices {
         if let Ok(name) = device.name() {
             let lower = name.to_lowercase();
+            // Prioritize TRRS headset in-line mic if present ("External Microphone")
+            if lower.contains("external microphone") || lower.contains("headset") {
+                headset_mic = Some((device, name));
+                break;
+            }
+            // Built-in studio microphone array (MacBook Microphone, Built-in Microphone, etc.)
             if lower.contains("macbook") || lower.contains("built-in") || lower.contains("internal") {
-                return Ok((device, name));
+                internal_mic = Some((device, name));
             }
         }
+    }
+
+    // 1. If a headset with an in-line mic is plugged in, use the headset mic
+    if let Some(mic) = headset_mic {
+        return Ok(mic);
+    }
+
+    // 2. If standard 3.5mm headphones (TRS without mic) are plugged in, use the Mac's built-in microphone
+    if let Some(mic) = internal_mic {
+        return Ok(mic);
     }
 
     let default_device = host
@@ -384,4 +403,26 @@ fn setup_output_stream(
     )?;
 
     Ok(stream)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_list_all_devices() {
+        let host = cpal::default_host();
+        println!("\n=== CPAL INPUT DEVICES ===");
+        if let Ok(devices) = host.input_devices() {
+            for dev in devices {
+                println!("Input: {:?}", dev.name());
+            }
+        }
+        println!("=== CPAL OUTPUT DEVICES ===");
+        if let Ok(devices) = host.output_devices() {
+            for dev in devices {
+                println!("Output: {:?}", dev.name());
+            }
+        }
+    }
 }

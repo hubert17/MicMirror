@@ -55,6 +55,9 @@ MicMirror lives exclusively in your menu bar (`LSUIElement = true`) with a purpl
   - **Zero latency dry voice**: Direct voice stays 100% dry and sub-4ms, while lush acoustic reverberations blossom naturally behind it.
   - Soft-clip limiter protects against digital clipping during loud vocal belts.
 - **Acoustic Feedback Protection (Auto-Mute)**: If 3.5mm headphones are unplugged, the app immediately disengages the audio stream to prevent dangerous high-pitched feedback squeal between the built-in mic and MacBook speakers.
+- **Smart Microphone Routing (Headset vs. Headphones)**:
+  - **Headset (TRRS plug with mic)**: Automatically routes to the headset's in-line wire microphone (`External Microphone`).
+  - **Headphones (TRS plug without mic)**: Automatically routes to your Mac's studio-grade built-in microphone array (`Built-in Microphone` / `MacBook Microphone`) while monitoring through your headphones.
 - **Lock-Free, Real-Time Audio**: Powered by [`rtrb`](https://crates.io/crates/rtrb) (wait-free, zero heap allocation, cache-line padded against false sharing).
 - **Custom `CALayer` Apple Green Switch**: Custom Cocoa toggle that guarantees persistent Apple system green whenever monitoring is active, even when closing and reopening the menu.
 - **Purple Squircle Headphone Tray Icon**: Features an electric purple badge with a white `headphones` symbol that dynamically dims when muted.
@@ -124,9 +127,9 @@ The slider features 7 discrete tick marks to customize your buffer based on stab
 
 ## System Requirements
 
-- **Mac**: Apple Silicon (`M1`, `M2`, `M3`, `M4` or later)
+- **Mac**: Apple Silicon (`M1`, `M2`, `M3`, `M4`, `A18 Pro` MacBook Neo, or later)
 - **OS**: macOS 12 (Monterey) or later
-- **Output Device**: 3.5mm analog headphones or headset plugged into the headphone jack
+- **Output Device**: 3.5mm analog headphones or headset plugged into the BUILT-IN audio jack
 - **Build Requirements**: Rust toolchain (`cargo`, `rustc`), Xcode Command Line Tools
 
 ---
@@ -158,9 +161,9 @@ open target/release/MicMirror.app
 #### Does this work alongside Zoom, Teams, or Google Meet?
 **Yes.** CoreAudio natively permits multiple applications to read from the microphone concurrently. Meeting participants will only hear your raw microphone audio (or conferencing noise suppression); they will not hear your local MicMirror sidetone or reverb.
 
-#### Why does MicMirror only run on the 3.5mm headphone jack?
-1. **Hearing Safety**: If zero-latency monitoring runs through built-in speakers while the built-in mic is live, it creates an immediate acoustic feedback squeal.
-2. **True Sub-Millisecond DMA**: Apple Silicon's internal headphone jack connects directly over memory-mapped DMA to the analog codec, bypassing USB controller packet latency.
+#### Why does MicMirror only run on the built-in 3.5mm headphone jack?
+1. **Motherboard-Level DMA vs. USB Bus Jitter**: Apple Silicon's internal headphone jack connects directly via memory-mapped DMA to the analog codec, bypassing USB controller packet framing and driver latency. USB audio interfaces and dongles introduce USB polling jitter and asynchronous clock drift.
+2. **Hearing Safety**: If zero-latency monitoring runs through built-in speakers while the built-in mic is live, it creates an immediate acoustic feedback squeal.
 3. **Bluetooth Latency**: Bluetooth audio codecs (AAC, SBC) impose a physical latency floor of 30–150 ms, which causes distracting auditory disorientation for live speech.
 
 #### How do I quit the application?
