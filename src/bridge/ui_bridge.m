@@ -265,7 +265,7 @@ static const BufferPreset BUFFER_PRESETS[7] = {
     }
     [cardView addSubview:iconView];
 
-    NSTextField *titleLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(46, viewHeight - 27, 140, 18)];
+    NSTextField *titleLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(46, viewHeight - 25, 170, 18)];
     titleLabel.stringValue = @"MicMirror";
     titleLabel.font = [NSFont systemFontOfSize:13.5 weight:NSFontWeightSemibold];
     titleLabel.textColor = [NSColor labelColor];
@@ -275,7 +275,7 @@ static const BufferPreset BUFFER_PRESETS[7] = {
     titleLabel.selectable = NO;
     [cardView addSubview:titleLabel];
 
-    NSTextField *subLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(46, viewHeight - 42, 140, 14)];
+    NSTextField *subLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(46, viewHeight - 39, 170, 14)];
     subLabel.stringValue = @"Zero-Latency Sidetone";
     subLabel.font = [NSFont systemFontOfSize:10.5 weight:NSFontWeightRegular];
     subLabel.textColor = [NSColor secondaryLabelColor];
@@ -285,21 +285,32 @@ static const BufferPreset BUFFER_PRESETS[7] = {
     subLabel.selectable = NO;
     [cardView addSubview:subLabel];
 
-    // GreenSwitch: Persistent Apple Green switch
-    self.toggleSwitch = [[GreenSwitch alloc] initWithFrame:NSMakeRect(viewWidth - 52, viewHeight - 38, 38, 22)];
+    // Hardware connection state label placed directly below Zero-Latency Sidetone inside the header group
+    self.statusLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(46, viewHeight - 53, 170, 13)];
+    self.statusLabel.stringValue = @"● 3.5mm Headphone Jack Connected";
+    self.statusLabel.font = [NSFont systemFontOfSize:10.0 weight:NSFontWeightMedium];
+    self.statusLabel.textColor = [NSColor systemGreenColor];
+    self.statusLabel.bezeled = NO;
+    self.statusLabel.drawsBackground = NO;
+    self.statusLabel.editable = NO;
+    self.statusLabel.selectable = NO;
+    [cardView addSubview:self.statusLabel];
+
+    // GreenSwitch: Persistent Apple Green switch vertically centered with the header
+    self.toggleSwitch = [[GreenSwitch alloc] initWithFrame:NSMakeRect(viewWidth - 52, viewHeight - 44, 38, 22)];
     self.toggleSwitch.state = initialActive ? NSControlStateValueOn : NSControlStateValueOff;
     [self.toggleSwitch updateColorsAnimated:NO];
     self.toggleSwitch.target = self;
     self.toggleSwitch.action = @selector(switchToggled:);
     [cardView addSubview:self.toggleSwitch];
 
-    // Separator 1
-    NSBox *sep1 = [[NSBox alloc] initWithFrame:NSMakeRect(14, viewHeight - 50, viewWidth - 28, 1)];
+    // Separator 1 (placed right below the header group)
+    NSBox *sep1 = [[NSBox alloc] initWithFrame:NSMakeRect(14, viewHeight - 61, viewWidth - 28, 1)];
     sep1.boxType = NSBoxSeparator;
     [cardView addSubview:sep1];
 
     // --- Buffer Size Section (Row 2) ---
-    self.bufferLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(14, viewHeight - 72, viewWidth - 28, 16)];
+    self.bufferLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(14, viewHeight - 82, viewWidth - 28, 16)];
     self.bufferLabel.stringValue = [self formatBufferLabel:presetIdx];
     self.bufferLabel.font = [NSFont monospacedDigitSystemFontOfSize:11.5 weight:NSFontWeightMedium];
     self.bufferLabel.textColor = [NSColor labelColor];
@@ -309,7 +320,7 @@ static const BufferPreset BUFFER_PRESETS[7] = {
     self.bufferLabel.selectable = NO;
     [cardView addSubview:self.bufferLabel];
 
-    self.bufferSlider = [[NSSlider alloc] initWithFrame:NSMakeRect(14, viewHeight - 94, viewWidth - 28, 20)];
+    self.bufferSlider = [[NSSlider alloc] initWithFrame:NSMakeRect(14, viewHeight - 104, viewWidth - 28, 20)];
     self.bufferSlider.minValue = 0.0;
     self.bufferSlider.maxValue = 6.0;
     self.bufferSlider.numberOfTickMarks = 7;
@@ -321,13 +332,13 @@ static const BufferPreset BUFFER_PRESETS[7] = {
     [cardView addSubview:self.bufferSlider];
 
     // Separator 2
-    NSBox *sep2 = [[NSBox alloc] initWithFrame:NSMakeRect(14, viewHeight - 104, viewWidth - 28, 1)];
+    NSBox *sep2 = [[NSBox alloc] initWithFrame:NSMakeRect(14, viewHeight - 114, viewWidth - 28, 1)];
     sep2.boxType = NSBoxSeparator;
     [cardView addSubview:sep2];
 
     // --- Input Volume Section (Row 3) ---
     int volPercent = (int)(initialVol * 100.0f);
-    self.inputVolumeLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(14, viewHeight - 124, viewWidth - 28, 16)];
+    self.inputVolumeLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(14, viewHeight - 134, viewWidth - 28, 16)];
     self.inputVolumeLabel.stringValue = [NSString stringWithFormat:@"Input volume: %d%%", volPercent];
     self.inputVolumeLabel.font = [NSFont systemFontOfSize:11.5 weight:NSFontWeightRegular];
     self.inputVolumeLabel.textColor = [NSColor labelColor];
@@ -338,13 +349,13 @@ static const BufferPreset BUFFER_PRESETS[7] = {
     [cardView addSubview:self.inputVolumeLabel];
 
     // Left mic icon (small)
-    NSImageView *micLow = [[NSImageView alloc] initWithFrame:NSMakeRect(14, viewHeight - 144, 14, 14)];
+    NSImageView *micLow = [[NSImageView alloc] initWithFrame:NSMakeRect(14, viewHeight - 154, 14, 14)];
     NSImage *imgLow = [NSImage imageWithSystemSymbolName:@"mic" accessibilityDescription:nil];
     if (imgLow) { [imgLow setTemplate:YES]; micLow.image = imgLow; }
     [cardView addSubview:micLow];
 
     // Input volume slider
-    self.inputVolumeSlider = [[NSSlider alloc] initWithFrame:NSMakeRect(32, viewHeight - 146, viewWidth - 66, 18)];
+    self.inputVolumeSlider = [[NSSlider alloc] initWithFrame:NSMakeRect(32, viewHeight - 156, viewWidth - 66, 18)];
     self.inputVolumeSlider.minValue = 0.0;
     self.inputVolumeSlider.maxValue = 1.0;
     self.inputVolumeSlider.floatValue = initialVol;
@@ -354,18 +365,18 @@ static const BufferPreset BUFFER_PRESETS[7] = {
     [cardView addSubview:self.inputVolumeSlider];
 
     // Right mic icon (full)
-    NSImageView *micHigh = [[NSImageView alloc] initWithFrame:NSMakeRect(viewWidth - 28, viewHeight - 144, 14, 14)];
+    NSImageView *micHigh = [[NSImageView alloc] initWithFrame:NSMakeRect(viewWidth - 28, viewHeight - 154, 14, 14)];
     NSImage *imgHigh = [NSImage imageWithSystemSymbolName:@"mic.fill" accessibilityDescription:nil];
     if (imgHigh) { [imgHigh setTemplate:YES]; micHigh.image = imgHigh; }
     [cardView addSubview:micHigh];
 
     // Separator 3
-    NSBox *sep3 = [[NSBox alloc] initWithFrame:NSMakeRect(14, viewHeight - 156, viewWidth - 28, 1)];
+    NSBox *sep3 = [[NSBox alloc] initWithFrame:NSMakeRect(14, viewHeight - 166, viewWidth - 28, 1)];
     sep3.boxType = NSBoxSeparator;
     [cardView addSubview:sep3];
 
     // --- Vocal Reverb Section (Row 4) ---
-    self.reverbLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(14, viewHeight - 176, viewWidth - 28, 16)];
+    self.reverbLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(14, viewHeight - 186, viewWidth - 28, 16)];
     self.reverbLabel.stringValue = [self formatReverbLabel:initialWet];
     self.reverbLabel.font = [NSFont systemFontOfSize:11.5 weight:NSFontWeightRegular];
     self.reverbLabel.textColor = [NSColor labelColor];
@@ -376,13 +387,13 @@ static const BufferPreset BUFFER_PRESETS[7] = {
     [cardView addSubview:self.reverbLabel];
 
     // Left spark/reverb icon
-    NSImageView *verbLow = [[NSImageView alloc] initWithFrame:NSMakeRect(14, viewHeight - 196, 14, 14)];
+    NSImageView *verbLow = [[NSImageView alloc] initWithFrame:NSMakeRect(14, viewHeight - 206, 14, 14)];
     NSImage *imgVerbLow = [NSImage imageWithSystemSymbolName:@"sparkles" accessibilityDescription:nil];
     if (imgVerbLow) { [imgVerbLow setTemplate:YES]; verbLow.image = imgVerbLow; }
     [cardView addSubview:verbLow];
 
     // Reverb slider (0.0 to 1.0)
-    self.reverbSlider = [[NSSlider alloc] initWithFrame:NSMakeRect(32, viewHeight - 198, viewWidth - 46, 18)];
+    self.reverbSlider = [[NSSlider alloc] initWithFrame:NSMakeRect(32, viewHeight - 208, viewWidth - 46, 18)];
     self.reverbSlider.minValue = 0.0;
     self.reverbSlider.maxValue = 1.0;
     self.reverbSlider.floatValue = initialWet;
@@ -390,17 +401,6 @@ static const BufferPreset BUFFER_PRESETS[7] = {
     self.reverbSlider.target = self;
     self.reverbSlider.action = @selector(reverbSliderChanged:);
     [cardView addSubview:self.reverbSlider];
-
-    // --- Status Section (Row 5) ---
-    self.statusLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(14, 6, viewWidth - 28, 16)];
-    self.statusLabel.stringValue = @"● 3.5mm Headphone Jack Connected";
-    self.statusLabel.font = [NSFont systemFontOfSize:11.0 weight:NSFontWeightMedium];
-    self.statusLabel.textColor = [NSColor systemGreenColor];
-    self.statusLabel.bezeled = NO;
-    self.statusLabel.drawsBackground = NO;
-    self.statusLabel.editable = NO;
-    self.statusLabel.selectable = NO;
-    [cardView addSubview:self.statusLabel];
 
     // Add to menu
     NSMenuItem *cardMenuItem = [[NSMenuItem alloc] init];
