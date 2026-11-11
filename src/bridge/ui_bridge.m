@@ -199,10 +199,10 @@ static const BufferPreset BUFFER_PRESETS[7] = {
         }
         [path fill];
 
-        // Draw white "waveform.and.mic" SF Symbol inside
-        NSImage *symbol = [NSImage imageWithSystemSymbolName:@"waveform.and.mic" accessibilityDescription:@"MicMirror"];
+        // Draw white "headphones" SF Symbol inside
+        NSImage *symbol = [NSImage imageWithSystemSymbolName:@"headphones" accessibilityDescription:@"MicMirror"];
         if (!symbol) {
-            symbol = [NSImage imageWithSystemSymbolName:@"mic.fill" accessibilityDescription:@"MicMirror"];
+            symbol = [NSImage imageWithSystemSymbolName:@"waveform.and.mic" accessibilityDescription:@"MicMirror"];
         }
 
         if (symbol) {
@@ -253,7 +253,7 @@ static const BufferPreset BUFFER_PRESETS[7] = {
     menu.minimumWidth = 280.0;
 
     CGFloat viewWidth = 280.0;
-    CGFloat viewHeight = 226.0;
+    CGFloat viewHeight = 232.0;
     NSView *cardView = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, viewWidth, viewHeight)];
 
     // --- Header Section (Row 1) ---
@@ -278,7 +278,7 @@ static const BufferPreset BUFFER_PRESETS[7] = {
     subLabel.selectable = NO;
     [cardView addSubview:subLabel];
 
-    // Left App Icon (vertically centered with title and subtitle: center Y = viewHeight - 27)
+    // Left App Icon
     NSImageView *iconView = [[NSImageView alloc] initWithFrame:NSMakeRect(14, viewHeight - 39, 24, 24)];
     NSImage *appIcon = [NSImage imageWithSystemSymbolName:@"waveform.circle.fill" accessibilityDescription:@"Logo"];
     if (appIcon) {
@@ -295,7 +295,7 @@ static const BufferPreset BUFFER_PRESETS[7] = {
     self.toggleSwitch.action = @selector(switchToggled:);
     [cardView addSubview:self.toggleSwitch];
 
-    // Hardware connection state label placed below Zero-Latency Sidetone with comfortable breathing gap
+    // Hardware connection state label placed below Zero-Latency Sidetone
     self.statusLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(46, viewHeight - 61, 200, 14)];
     self.statusLabel.stringValue = @"● 3.5mm Headphone Jack Connected";
     self.statusLabel.font = [NSFont systemFontOfSize:10.5 weight:NSFontWeightMedium];
@@ -306,13 +306,13 @@ static const BufferPreset BUFFER_PRESETS[7] = {
     self.statusLabel.selectable = NO;
     [cardView addSubview:self.statusLabel];
 
-    // Separator 1 (placed cleanly below the status line)
-    NSBox *sep1 = [[NSBox alloc] initWithFrame:NSMakeRect(14, viewHeight - 71, viewWidth - 28, 1)];
+    // Separator 1 (Divider 1 at Y = viewHeight - 72)
+    NSBox *sep1 = [[NSBox alloc] initWithFrame:NSMakeRect(14, viewHeight - 72, viewWidth - 28, 1)];
     sep1.boxType = NSBoxSeparator;
     [cardView addSubview:sep1];
 
-    // --- Buffer Size Section (Row 2) ---
-    self.bufferLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(14, viewHeight - 93, viewWidth - 28, 16)];
+    // --- Row 2: Buffer Preset (Span: 50px, from Y = -72 to Y = -122) ---
+    self.bufferLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(14, viewHeight - 94, viewWidth - 28, 16)];
     self.bufferLabel.stringValue = [self formatBufferLabel:presetIdx];
     self.bufferLabel.font = [NSFont monospacedDigitSystemFontOfSize:11.5 weight:NSFontWeightMedium];
     self.bufferLabel.textColor = [NSColor labelColor];
@@ -322,7 +322,7 @@ static const BufferPreset BUFFER_PRESETS[7] = {
     self.bufferLabel.selectable = NO;
     [cardView addSubview:self.bufferLabel];
 
-    self.bufferSlider = [[NSSlider alloc] initWithFrame:NSMakeRect(14, viewHeight - 114, viewWidth - 28, 18)];
+    self.bufferSlider = [[NSSlider alloc] initWithFrame:NSMakeRect(14, viewHeight - 116, viewWidth - 28, 18)];
     self.bufferSlider.minValue = 0.0;
     self.bufferSlider.maxValue = 6.0;
     self.bufferSlider.numberOfTickMarks = 7;
@@ -333,14 +333,14 @@ static const BufferPreset BUFFER_PRESETS[7] = {
     self.bufferSlider.action = @selector(bufferSliderChanged:);
     [cardView addSubview:self.bufferSlider];
 
-    // Separator 2
+    // Separator 2 (Divider 2 at Y = viewHeight - 124)
     NSBox *sep2 = [[NSBox alloc] initWithFrame:NSMakeRect(14, viewHeight - 124, viewWidth - 28, 1)];
     sep2.boxType = NSBoxSeparator;
     [cardView addSubview:sep2];
 
-    // --- Input Volume Section (Row 3) ---
+    // --- Row 3: Input Volume (Span: 50px, from Y = -124 to Y = -174) ---
     int volPercent = (int)(initialVol * 100.0f);
-    self.inputVolumeLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(14, viewHeight - 144, viewWidth - 28, 16)];
+    self.inputVolumeLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(14, viewHeight - 146, viewWidth - 28, 16)];
     self.inputVolumeLabel.stringValue = [NSString stringWithFormat:@"Input volume: %d%%", volPercent];
     self.inputVolumeLabel.font = [NSFont systemFontOfSize:11.5 weight:NSFontWeightRegular];
     self.inputVolumeLabel.textColor = [NSColor labelColor];
@@ -350,14 +350,14 @@ static const BufferPreset BUFFER_PRESETS[7] = {
     self.inputVolumeLabel.selectable = NO;
     [cardView addSubview:self.inputVolumeLabel];
 
-    // Left mic icon (small)
-    NSImageView *micLow = [[NSImageView alloc] initWithFrame:NSMakeRect(14, viewHeight - 164, 14, 14)];
+    // Left mic icon
+    NSImageView *micLow = [[NSImageView alloc] initWithFrame:NSMakeRect(14, viewHeight - 168, 14, 14)];
     NSImage *imgLow = [NSImage imageWithSystemSymbolName:@"mic" accessibilityDescription:nil];
     if (imgLow) { [imgLow setTemplate:YES]; micLow.image = imgLow; }
     [cardView addSubview:micLow];
 
     // Input volume slider
-    self.inputVolumeSlider = [[NSSlider alloc] initWithFrame:NSMakeRect(32, viewHeight - 166, viewWidth - 66, 18)];
+    self.inputVolumeSlider = [[NSSlider alloc] initWithFrame:NSMakeRect(32, viewHeight - 170, viewWidth - 66, 18)];
     self.inputVolumeSlider.minValue = 0.0;
     self.inputVolumeSlider.maxValue = 1.0;
     self.inputVolumeSlider.floatValue = initialVol;
@@ -366,19 +366,19 @@ static const BufferPreset BUFFER_PRESETS[7] = {
     self.inputVolumeSlider.action = @selector(volumeSliderChanged:);
     [cardView addSubview:self.inputVolumeSlider];
 
-    // Right mic icon (full)
-    NSImageView *micHigh = [[NSImageView alloc] initWithFrame:NSMakeRect(viewWidth - 28, viewHeight - 164, 14, 14)];
+    // Right mic icon
+    NSImageView *micHigh = [[NSImageView alloc] initWithFrame:NSMakeRect(viewWidth - 28, viewHeight - 168, 14, 14)];
     NSImage *imgHigh = [NSImage imageWithSystemSymbolName:@"mic.fill" accessibilityDescription:nil];
     if (imgHigh) { [imgHigh setTemplate:YES]; micHigh.image = imgHigh; }
     [cardView addSubview:micHigh];
 
-    // Separator 3
+    // Separator 3 (Divider 3 at Y = viewHeight - 176)
     NSBox *sep3 = [[NSBox alloc] initWithFrame:NSMakeRect(14, viewHeight - 176, viewWidth - 28, 1)];
     sep3.boxType = NSBoxSeparator;
     [cardView addSubview:sep3];
 
-    // --- Vocal Reverb Section (Row 4) ---
-    self.reverbLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(14, viewHeight - 196, viewWidth - 28, 16)];
+    // --- Row 4: Vocal Reverb (Span: 50px, from Y = -176 to Y = -226) ---
+    self.reverbLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(14, viewHeight - 198, viewWidth - 28, 16)];
     self.reverbLabel.stringValue = [self formatReverbLabel:initialWet];
     self.reverbLabel.font = [NSFont systemFontOfSize:11.5 weight:NSFontWeightRegular];
     self.reverbLabel.textColor = [NSColor labelColor];
@@ -389,13 +389,13 @@ static const BufferPreset BUFFER_PRESETS[7] = {
     [cardView addSubview:self.reverbLabel];
 
     // Left spark/reverb icon
-    NSImageView *verbLow = [[NSImageView alloc] initWithFrame:NSMakeRect(14, viewHeight - 216, 14, 14)];
+    NSImageView *verbLow = [[NSImageView alloc] initWithFrame:NSMakeRect(14, viewHeight - 220, 14, 14)];
     NSImage *imgVerbLow = [NSImage imageWithSystemSymbolName:@"sparkles" accessibilityDescription:nil];
     if (imgVerbLow) { [imgVerbLow setTemplate:YES]; verbLow.image = imgVerbLow; }
     [cardView addSubview:verbLow];
 
     // Reverb slider (0.0 to 1.0)
-    self.reverbSlider = [[NSSlider alloc] initWithFrame:NSMakeRect(32, viewHeight - 218, viewWidth - 46, 18)];
+    self.reverbSlider = [[NSSlider alloc] initWithFrame:NSMakeRect(32, viewHeight - 222, viewWidth - 46, 18)];
     self.reverbSlider.minValue = 0.0;
     self.reverbSlider.maxValue = 1.0;
     self.reverbSlider.floatValue = initialWet;
@@ -410,6 +410,13 @@ static const BufferPreset BUFFER_PRESETS[7] = {
     [menu addItem:cardMenuItem];
 
     [menu addItem:[NSMenuItem separatorItem]];
+
+    // About Menu Item (navigates to GitHub repository)
+    NSMenuItem *aboutItem = [[NSMenuItem alloc] initWithTitle:@"About MicMirror..."
+                                                       action:@selector(aboutClicked:)
+                                                keyEquivalent:@""];
+    aboutItem.target = self;
+    [menu addItem:aboutItem];
 
     // Quit Menu Item
     NSMenuItem *quitItem = [[NSMenuItem alloc] initWithTitle:@"Quit MicMirror"
@@ -478,6 +485,10 @@ static const BufferPreset BUFFER_PRESETS[7] = {
     if (self.callbacks.on_reverb_changed) {
         self.callbacks.on_reverb_changed(val);
     }
+}
+
+- (void)aboutClicked:(id)sender {
+    [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:@"https://github.com/hubert17/MicMirror"]];
 }
 
 - (void)quitClicked:(id)sender {
