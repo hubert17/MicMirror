@@ -1,4 +1,5 @@
 #import <AppKit/AppKit.h>
+#import <QuartzCore/QuartzCore.h>
 #include "ui_bridge.h"
 
 // Buffer presets: (Input frames, Output frames, Description)
@@ -18,42 +19,98 @@ static const BufferPreset BUFFER_PRESETS[7] = {
     {256, 512, "Stability"}
 };
 
-// Subclassed NSSwitch that persistently forces standard Apple Green when ON/Active
-// even across menu open/close and window re-attachments
-@interface GreenSwitch : NSSwitch
+// Custom Apple-style switch with guaranteed, persistent vibrant systemGreenColor when ON
+@interface GreenSwitch : NSControl
+@property (nonatomic, strong) CALayer *trackLayer;
+@property (nonatomic, strong) CALayer *thumbLayer;
+@property (nonatomic, assign) NSControlStateValue state;
+@property (nonatomic, assign) BOOL isLocked;
+- (void)updateColorsAnimated:(BOOL)animated;
 @end
 
 @implementation GreenSwitch
 
-- (void)updateGreenTrack {
-    @try {
-        [self setValue:[NSColor systemGreenColor] forKey:@"trackColor"];
-    } @catch (id ex) {}
+- (instancetype)initWithFrame:(NSRect)frameRect {
+    self = [super initWithFrame:frameRect];
+    if (self) {
+        _state = NSControlStateValueOff;
+        _isLocked = NO;
+        self.wantsLayer = YES;
+
+        CGFloat width = frameRect.size.width;
+        CGFloat height = frameRect.size.height;
+        CGFloat corner = height / 2.0;
+
+        _trackLayer = [CALayer layer];
+        _trackLayer.frame = CGRectMake(0, 0, width, height);
+        _trackLayer.cornerRadius = corner;
+        _trackLayer.backgroundColor = [NSColor quaternaryLabelColor].CGColor;
+        [self.layer addSublayer:_trackLayer];
+
+        CGFloat thumbSize = height - 4.0;
+        _thumbLayer = [CALayer layer];
+        _thumbLayer.frame = CGRectMake(2.0, 2.0, thumbSize, thumbSize);
+        _thumbLayer.cornerRadius = thumbSize / 2.0;
+        _thumbLayer.backgroundColor = [NSColor whiteColor].CGColor;
+        _thumbLayer.shadowColor = [NSColor blackColor].CGColor;
+        _thumbLayer.shadowOpacity = 0.25;
+        _thumbLayer.shadowOffset = CGSizeMake(0, -1);
+        _thumbLayer.shadowRadius = 1.5;
+        [self.layer addSublayer:_thumbLayer];
+    }
+    return self;
+}
+
+- (void)setState:(NSControlStateValue)state {
+    _state = state;
+    [self updateColorsAnimated:NO];
+}
+
+- (void)updateColorsAnimated:(BOOL)animated {
+    BOOL on = (self.state == NSControlStateValueOn);
+    CGFloat height = self.bounds.size.height;
+    CGFloat width = self.bounds.size.width;
+    CGFloat thumbSize = height - 4.0;
+    CGFloat targetX = on ? (width - thumbSize - 2.0) : 2.0;
+
+    CGColorRef targetTrackColor = on ? [NSColor systemGreenColor].CGColor : [NSColor colorWithWhite:0.75 alpha:0.6].CGColor;
+    if (self.isLocked || !self.isEnabled) {
+        targetTrackColor = [NSColor colorWithWhite:0.5 alpha:0.3].CGColor;
+    }
+
+    if (animated) {
+        [CATransaction begin];
+        [CATransaction setAnimationDuration:0.2];
+        [CATransaction setAnimationTimingFunction:[CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut]];
+        self.thumbLayer.frame = CGRectMake(targetX, 2.0, thumbSize, thumbSize);
+        self.trackLayer.backgroundColor = targetTrackColor;
+        [CATransaction commit];
+    } else {
+        self.thumbLayer.frame = CGRectMake(targetX, 2.0, thumbSize, thumbSize);
+        self.trackLayer.backgroundColor = targetTrackColor;
+    }
 }
 
 - (void)viewDidMoveToWindow {
     [super viewDidMoveToWindow];
-    [self updateGreenTrack];
-}
-
-- (void)updateLayer {
-    [super updateLayer];
-    [self updateGreenTrack];
-}
-
-- (void)drawRect:(NSRect)dirtyRect {
-    [self updateGreenTrack];
-    [super drawRect:dirtyRect];
-}
-
-- (void)setState:(NSControlStateValue)state {
-    [super setState:state];
-    [self updateGreenTrack];
+    [self updateColorsAnimated:NO];
 }
 
 - (void)layout {
     [super layout];
-    [self updateGreenTrack];
+    [self updateColorsAnimated:NO];
+}
+
+- (BOOL)acceptsFirstMouse:(NSEvent *)event {
+    return YES;
+}
+
+- (void)mouseDown:(NSEvent *)event {
+    if (!self.isEnabled || self.isLocked) return;
+    self.state = (self.state == NSControlStateValueOn) ? NSControlStateValueOff : NSControlStateValueOn;
+    [self updateColorsAnimated:YES];
+
+    [self sendAction:self.action to:self.target];
 }
 
 @end
@@ -184,9 +241,9 @@ static const BufferPreset BUFFER_PRESETS[7] = {
     [cardView addSubview:subLabel];
 
     // GreenSwitch: Persistent Apple Green switch
-    self.toggleSwitch = [[GreenSwitch alloc] initWithFrame:NSMakeRect(viewWidth - 52, viewHeight - 38, 38, 24)];
+    self.toggleSwitch = [[GreenSwitch alloc] initWithFrame:NSMakeRect(viewWidth - 52, viewHeight - 38, 38, 22)];
     self.toggleSwitch.state = initialActive ? NSControlStateValueOn : NSControlStateValueOff;
-    [self.toggleSwitch updateGreenTrack];
+    [self.toggleSwitch updateColorsAnimated:NO];
     self.toggleSwitch.target = self;
     self.toggleSwitch.action = @selector(switchToggled:);
     [cardView addSubview:self.toggleSwitch];
@@ -320,6 +377,7 @@ static const BufferPreset BUFFER_PRESETS[7] = {
 // NSMenuDelegate: Called every time menu is about to open
 - (void)menuWillOpen:(NSMenu *)menu {
     // Re-assert switch state and green track color on menu appearance
+    self.toggleSwitch.isLocked = self.isLocked;
     if (self.isLocked) {
         self.toggleSwitch.state = NSControlStateValueOff;
         self.toggleSwitch.enabled = NO;
@@ -327,17 +385,16 @@ static const BufferPreset BUFFER_PRESETS[7] = {
         self.toggleSwitch.state = self.isActive ? NSControlStateValueOn : NSControlStateValueOff;
         self.toggleSwitch.enabled = YES;
     }
-    [self.toggleSwitch updateGreenTrack];
+    [self.toggleSwitch updateColorsAnimated:NO];
 }
 
-- (void)switchToggled:(NSSwitch *)sender {
+- (void)switchToggled:(GreenSwitch *)sender {
     if (self.isLocked) {
         sender.state = NSControlStateValueOff;
         return;
     }
     BOOL active = (sender.state == NSControlStateValueOn);
     self.isActive = active;
-    [self.toggleSwitch updateGreenTrack];
 
     if (self.callbacks.on_toggle_active) {
         self.callbacks.on_toggle_active(active);
@@ -387,6 +444,7 @@ static const BufferPreset BUFFER_PRESETS[7] = {
     dispatch_async(dispatch_get_main_queue(), ^{
         self.isLocked = !connected;
         self.currentDeviceDisplayName = dName;
+        self.toggleSwitch.isLocked = !connected;
         if (connected) {
             self.statusLabel.stringValue = [NSString stringWithFormat:@"● %@", dName];
             self.statusLabel.textColor = [NSColor systemGreenColor];
@@ -398,7 +456,7 @@ static const BufferPreset BUFFER_PRESETS[7] = {
             self.toggleSwitch.state = NSControlStateValueOff;
             self.toggleSwitch.enabled = NO;
         }
-        [self.toggleSwitch updateGreenTrack];
+        [self.toggleSwitch updateColorsAnimated:NO];
     });
 }
 
@@ -406,7 +464,7 @@ static const BufferPreset BUFFER_PRESETS[7] = {
     dispatch_async(dispatch_get_main_queue(), ^{
         self.isActive = active;
         self.toggleSwitch.state = active ? NSControlStateValueOn : NSControlStateValueOff;
-        [self.toggleSwitch updateGreenTrack];
+        [self.toggleSwitch updateColorsAnimated:NO];
     });
 }
 
