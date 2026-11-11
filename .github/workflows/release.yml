@@ -17,7 +17,7 @@ permissions:
 jobs:
   check-and-build:
     name: Build & Package DMG (macOS arm64)
-    runs-on: macos-14 # Native Apple Silicon M-series runner
+    runs-on: macos-latest # Apple Silicon (M-series) runner
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
