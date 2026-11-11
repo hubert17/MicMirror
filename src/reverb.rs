@@ -186,28 +186,41 @@ impl Freeverb {
             return;
         }
 
-        // Wet mix: quadratic curve for gentle onset, max ~55%
-        self.wet = amount * amount * 0.55;
+        // Wet mix curve:
+        // - 1%–9%: Gentle subtle onset (starts low so 1-9 is kept subtle as requested)
+        // - 10%–24% [Small Room]: Noticeable boost so intimate room acoustics are clearly heard
+        // - 25%–49% [Studio]: Audible and present studio room ambiance
+        // - 50%–100% [Large Hall, Concert Hall, Cathedral]: Smoothly transitions into the already-loved hall/cathedral levels
+        self.wet = if amount < 0.10 {
+            // 0.0 to 0.10 maps gently from 0.0 to 0.05
+            amount * 0.50
+        } else if amount < 0.50 {
+            // 0.10 to 0.50 smoothly scales from 0.05 to ~0.20 (giving clear body in 10-24% and 25-49%)
+            0.05 + (amount - 0.10) * (0.15 / 0.40)
+        } else {
+            // 0.50 to 1.0 scales from 0.20 to 0.55 (matching the large hall, concert hall & cathedral response)
+            0.20 + (amount - 0.50) * (0.35 / 0.50)
+        };
 
-        // Room size → comb feedback: 0.30 (small, tight) to 0.95 (cathedral, infinite-ish)
+        // Room size → comb feedback: 0.40 (clear reflections) to 0.95 (cathedral)
         // feedback = room_size * 0.28 + 0.7, capped at 0.95
-        self.room_size = 0.30 + amount * 0.65;
+        self.room_size = 0.40 + amount * 0.55;
 
-        // Damping: 0.70 (absorptive, warm small room) to 0.08 (bright cathedral shimmer)
-        self.damp = 0.70 - amount * 0.62;
+        // Damping: 0.65 (warm room) to 0.08 (bright cathedral shimmer)
+        self.damp = 0.65 - amount * 0.57;
 
-        // Stereo width: 0.5 (intimate, mono-ish) to 1.0 (full panoramic spread)
-        self.width = 0.5 + amount * 0.5;
+        // Stereo width: 0.6 (studio stereo) to 1.0 (full panoramic spread)
+        self.width = 0.6 + amount * 0.4;
 
-        // Pre-delay: 0ms to ~40ms (quadratic for natural scaling)
+        // Pre-delay: 0ms to ~40ms
         // Simulates physical distance from voice to first reflecting surface
         self.predelay
             .set_delay((amount * amount * MAX_PREDELAY_SAMPLES as f32) as usize);
 
-        // Input gain into comb network: higher for larger spaces to maintain presence
-        self.input_scale = 0.015 + amount * 0.020;
+        // Input gain into comb network: slightly higher baseline so lower room settings have good body
+        self.input_scale = 0.022 + amount * 0.015;
 
-        // Dry stays at 100% — the singer always hears their voice immediately
+        // Dry stays locked at 100% — direct zero-latency voice is never compromised
         self.dry = 1.0;
 
         self.update_parameters();
