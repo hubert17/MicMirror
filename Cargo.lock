@@ -541,6 +541,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "cc",
+ "coreaudio-sys",
  "cpal",
  "env_logger",
  "log",

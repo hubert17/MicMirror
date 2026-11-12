@@ -73,21 +73,30 @@ static const BufferPreset BUFFER_PRESETS[7] = {
     CGFloat thumbSize = height - 4.0;
     CGFloat targetX = on ? (width - thumbSize - 2.0) : 2.0;
 
-    CGColorRef targetTrackColor = on ? [NSColor systemGreenColor].CGColor : [NSColor colorWithWhite:0.75 alpha:0.6].CGColor;
-    if (self.isLocked || !self.isEnabled) {
-        targetTrackColor = [NSColor colorWithWhite:0.5 alpha:0.3].CGColor;
-    }
+    __block CGColorRef targetTrackColor = NULL;
+    [self.effectiveAppearance performAsCurrentDrawingAppearance:^{
+        if (self.isLocked || !self.isEnabled) {
+            targetTrackColor = CGColorRetain([NSColor colorWithWhite:0.5 alpha:0.3].CGColor);
+        } else if (on) {
+            targetTrackColor = CGColorRetain([NSColor systemGreenColor].CGColor);
+        } else {
+            targetTrackColor = CGColorRetain([NSColor colorWithWhite:0.75 alpha:0.6].CGColor);
+        }
+    }];
 
+    [CATransaction begin];
     if (animated) {
-        [CATransaction begin];
         [CATransaction setAnimationDuration:0.2];
         [CATransaction setAnimationTimingFunction:[CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut]];
-        self.thumbLayer.frame = CGRectMake(targetX, 2.0, thumbSize, thumbSize);
-        self.trackLayer.backgroundColor = targetTrackColor;
-        [CATransaction commit];
     } else {
-        self.thumbLayer.frame = CGRectMake(targetX, 2.0, thumbSize, thumbSize);
-        self.trackLayer.backgroundColor = targetTrackColor;
+        [CATransaction setDisableActions:YES];
+    }
+    self.thumbLayer.frame = CGRectMake(targetX, 2.0, thumbSize, thumbSize);
+    self.trackLayer.backgroundColor = targetTrackColor;
+    [CATransaction commit];
+
+    if (targetTrackColor) {
+        CGColorRelease(targetTrackColor);
     }
 }
 
@@ -107,7 +116,7 @@ static const BufferPreset BUFFER_PRESETS[7] = {
 
 - (void)mouseDown:(NSEvent *)event {
     if (!self.isEnabled || self.isLocked) return;
-    self.state = (self.state == NSControlStateValueOn) ? NSControlStateValueOff : NSControlStateValueOn;
+    _state = (_state == NSControlStateValueOn) ? NSControlStateValueOff : NSControlStateValueOn;
     [self updateColorsAnimated:YES];
 
     [self sendAction:self.action to:self.target];
@@ -115,8 +124,116 @@ static const BufferPreset BUFFER_PRESETS[7] = {
 
 @end
 
-@interface MicMirrorMenuController : NSObject <NSMenuDelegate>
+// Clean menu-style row button for the popover footer ("About MicMirror..." / "Quit MicMirror")
+@interface PopoverRowButton : NSButton
+@property (nonatomic, copy) NSString *rowTitle;
+@property (nonatomic, copy) NSString *shortcutHint;
+@property (nonatomic, assign) BOOL isHovered;
+@property (nonatomic, strong) NSTrackingArea *hoverTrackingArea;
+@end
+
+@implementation PopoverRowButton
+
+- (instancetype)initWithFrame:(NSRect)frameRect title:(NSString *)title shortcut:(NSString *)shortcut {
+    self = [super initWithFrame:frameRect];
+    if (self) {
+        _rowTitle = [title copy];
+        _shortcutHint = [shortcut copy];
+        _isHovered = NO;
+        self.bordered = NO;
+        self.bezelStyle = NSBezelStyleRegularSquare;
+        self.buttonType = NSButtonTypeMomentaryChange;
+        self.title = @"";
+        self.wantsLayer = YES;
+        self.layer.cornerRadius = 5.0;
+    }
+    return self;
+}
+
+- (BOOL)acceptsFirstMouse:(NSEvent *)event {
+    return YES;
+}
+
+- (void)updateTrackingAreas {
+    [super updateTrackingAreas];
+    if (self.hoverTrackingArea) {
+        [self removeTrackingArea:self.hoverTrackingArea];
+    }
+    NSTrackingAreaOptions options = NSTrackingMouseEnteredAndExited | NSTrackingActiveAlways | NSTrackingInVisibleRect;
+    self.hoverTrackingArea = [[NSTrackingArea alloc] initWithRect:self.bounds options:options owner:self userInfo:nil];
+    [self addTrackingArea:self.hoverTrackingArea];
+}
+
+- (void)mouseEntered:(NSEvent *)event {
+    self.isHovered = YES;
+    [self setNeedsDisplay:YES];
+}
+
+- (void)mouseExited:(NSEvent *)event {
+    self.isHovered = NO;
+    [self setNeedsDisplay:YES];
+}
+
+- (void)drawRect:(NSRect)dirtyRect {
+    if (self.isHovered || self.isHighlighted) {
+        [[NSColor controlAccentColor] setFill];
+        NSBezierPath *bg = [NSBezierPath bezierPathWithRoundedRect:self.bounds xRadius:5.0 yRadius:5.0];
+        [bg fill];
+    }
+
+    NSColor *textColor = (self.isHovered || self.isHighlighted) ? [NSColor whiteColor] : [NSColor labelColor];
+    NSDictionary *titleAttrs = @{
+        NSFontAttributeName: [NSFont systemFontOfSize:13.0 weight:NSFontWeightRegular],
+        NSForegroundColorAttributeName: textColor
+    };
+    NSSize titleSize = [self.rowTitle sizeWithAttributes:titleAttrs];
+    NSPoint titlePt = NSMakePoint(10.0, floor((self.bounds.size.height - titleSize.height) / 2.0));
+    [self.rowTitle drawAtPoint:titlePt withAttributes:titleAttrs];
+
+    if (self.shortcutHint.length > 0) {
+        NSColor *hintColor = (self.isHovered || self.isHighlighted) ? [NSColor colorWithWhite:1.0 alpha:0.85] : [NSColor secondaryLabelColor];
+        NSDictionary *hintAttrs = @{
+            NSFontAttributeName: [NSFont systemFontOfSize:12.0 weight:NSFontWeightRegular],
+            NSForegroundColorAttributeName: hintColor
+        };
+        NSSize hintSize = [self.shortcutHint sizeWithAttributes:hintAttrs];
+        NSPoint hintPt = NSMakePoint(self.bounds.size.width - hintSize.width - 10.0, floor((self.bounds.size.height - hintSize.height) / 2.0));
+        [self.shortcutHint drawAtPoint:hintPt withAttributes:hintAttrs];
+    }
+}
+
+@end
+
+@interface MicMirrorPopoverViewController : NSViewController
+@property (nonatomic, copy) void (^onCancel)(void);
+@property (nonatomic, copy) void (^onQuitShortcut)(void);
+@end
+
+@implementation MicMirrorPopoverViewController
+
+- (void)cancelOperation:(id)sender {
+    if (self.onCancel) {
+        self.onCancel();
+    }
+}
+
+- (BOOL)performKeyEquivalent:(NSEvent *)event {
+    if ((event.modifierFlags & NSEventModifierFlagCommand) &&
+        [[event.charactersIgnoringModifiers lowercaseString] isEqualToString:@"q"]) {
+        if (self.onQuitShortcut) {
+            self.onQuitShortcut();
+        }
+        return YES;
+    }
+    return [super performKeyEquivalent:event];
+}
+
+@end
+
+@interface MicMirrorMenuController : NSObject <NSPopoverDelegate, NSApplicationDelegate>
 @property (nonatomic, strong) NSStatusItem *statusItem;
+@property (nonatomic, strong) NSPopover *popover;
+@property (nonatomic, strong) id outsideClickMonitor;
 @property (nonatomic, strong) GreenSwitch *toggleSwitch;
 @property (nonatomic, strong) NSSlider *bufferSlider;
 @property (nonatomic, strong) NSTextField *bufferLabel;
@@ -129,6 +246,7 @@ static const BufferPreset BUFFER_PRESETS[7] = {
 @property (nonatomic, assign) AppCallbacks callbacks;
 @property (nonatomic, assign) BOOL isLocked;
 @property (nonatomic, assign) BOOL isActive;
+@property (nonatomic, assign) BOOL isQuitting;
 @property (nonatomic, copy) NSString *currentDeviceDisplayName;
 @end
 
@@ -144,6 +262,7 @@ static const BufferPreset BUFFER_PRESETS[7] = {
         _callbacks = callbacks;
         _isLocked = NO;
         _isActive = initialActive;
+        _isQuitting = NO;
         _currentDeviceDisplayName = @"3.5mm Headphone Jack";
 
         [self setupUIWithPresetIndex:presetIdx initialVol:initialVol initialWet:initialWet active:initialActive];
@@ -159,6 +278,7 @@ static const BufferPreset BUFFER_PRESETS[7] = {
 }
 
 - (void)pollTimerFired:(NSTimer *)timer {
+    if (self.isQuitting) return;
     if (self.callbacks.on_poll_devices) {
         self.callbacks.on_poll_devices();
     }
@@ -243,18 +363,25 @@ static const BufferPreset BUFFER_PRESETS[7] = {
 }
 
 - (void)setupUIWithPresetIndex:(uint32_t)presetIdx initialVol:(float)initialVol initialWet:(float)initialWet active:(BOOL)initialActive {
-    // 1. Status Bar Item
+    // 1. Status Bar Item (button click toggles NSPopover; no NSMenu HIToolbox grab)
     self.statusItem = [[NSStatusBar systemStatusBar] statusItemWithLength:NSSquareStatusItemLength];
     [self updateStatusItemIcon];
+    NSStatusBarButton *button = self.statusItem.button;
+    if (button) {
+        button.target = self;
+        button.action = @selector(togglePopover:);
+        [button sendActionOn:(NSEventMaskLeftMouseUp | NSEventMaskRightMouseUp)];
+    }
 
-    // 2. Menu and Custom Card Container
-    NSMenu *menu = [[NSMenu alloc] init];
-    menu.delegate = self;
-    menu.minimumWidth = 280.0;
-
+    // 2. Popover and Custom Card Container
     CGFloat viewWidth = 280.0;
     CGFloat viewHeight = 232.0;
-    NSView *cardView = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, viewWidth, viewHeight)];
+    CGFloat footerHeight = 62.0;
+    CGFloat totalHeight = viewHeight + footerHeight;
+
+    NSView *containerView = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, viewWidth, totalHeight)];
+    NSView *cardView = [[NSView alloc] initWithFrame:NSMakeRect(0, footerHeight, viewWidth, viewHeight)];
+    [containerView addSubview:cardView];
 
     // --- Header Section (Row 1) ---
     // Top title & subtitle lines
@@ -404,33 +531,83 @@ static const BufferPreset BUFFER_PRESETS[7] = {
     self.reverbSlider.action = @selector(reverbSliderChanged:);
     [cardView addSubview:self.reverbSlider];
 
-    // Add to menu
-    NSMenuItem *cardMenuItem = [[NSMenuItem alloc] init];
-    cardMenuItem.view = cardView;
-    [menu addItem:cardMenuItem];
+    // Footer Separator + About + Quit rows inside containerView
+    NSBox *footerSep = [[NSBox alloc] initWithFrame:NSMakeRect(14, footerHeight - 4.0, viewWidth - 28, 1)];
+    footerSep.boxType = NSBoxSeparator;
+    [containerView addSubview:footerSep];
 
-    [menu addItem:[NSMenuItem separatorItem]];
+    PopoverRowButton *aboutBtn = [[PopoverRowButton alloc] initWithFrame:NSMakeRect(6, 31, viewWidth - 12, 24)
+                                                                   title:@"About MicMirror..."
+                                                                shortcut:@""];
+    aboutBtn.target = self;
+    aboutBtn.action = @selector(aboutClicked:);
+    [containerView addSubview:aboutBtn];
 
-    // About Menu Item (navigates to GitHub repository)
-    NSMenuItem *aboutItem = [[NSMenuItem alloc] initWithTitle:@"About MicMirror..."
-                                                       action:@selector(aboutClicked:)
-                                                keyEquivalent:@""];
-    aboutItem.target = self;
-    [menu addItem:aboutItem];
+    PopoverRowButton *quitBtn = [[PopoverRowButton alloc] initWithFrame:NSMakeRect(6, 5, viewWidth - 12, 24)
+                                                                  title:@"Quit MicMirror"
+                                                               shortcut:@"⌘Q"];
+    quitBtn.target = self;
+    quitBtn.action = @selector(quitClicked:);
+    [containerView addSubview:quitBtn];
 
-    // Quit Menu Item
-    NSMenuItem *quitItem = [[NSMenuItem alloc] initWithTitle:@"Quit MicMirror"
-                                                      action:@selector(quitClicked:)
-                                               keyEquivalent:@"q"];
-    quitItem.target = self;
-    [menu addItem:quitItem];
+    MicMirrorPopoverViewController *vc = [[MicMirrorPopoverViewController alloc] init];
+    vc.view = containerView;
+    __weak typeof(self) weakSelf = self;
+    vc.onCancel = ^{
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (strongSelf && strongSelf.popover.isShown) {
+            [strongSelf.popover performClose:nil];
+        }
+    };
+    vc.onQuitShortcut = ^{
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (strongSelf) {
+            [strongSelf quitClicked:nil];
+        }
+    };
 
-    self.statusItem.menu = menu;
+    self.popover = [[NSPopover alloc] init];
+    self.popover.contentViewController = vc;
+    self.popover.contentSize = NSMakeSize(viewWidth, totalHeight);
+    self.popover.behavior = NSPopoverBehaviorTransient;
+    self.popover.animates = YES;
+    self.popover.delegate = self;
 }
 
-// NSMenuDelegate: Called every time menu is about to open
-- (void)menuWillOpen:(NSMenu *)menu {
-    // Re-assert switch state and green track color on menu appearance
+- (void)togglePopover:(id)sender {
+    if (self.isQuitting) return;
+    if (self.popover.isShown) {
+        [self.popover performClose:sender];
+    } else {
+        NSStatusBarButton *button = self.statusItem.button;
+        if (button) {
+            [self.popover showRelativeToRect:button.bounds ofView:button preferredEdge:NSRectEdgeMinY];
+        }
+    }
+}
+
+- (void)installOutsideClickMonitor {
+    [self removeOutsideClickMonitor];
+    __weak typeof(self) weakSelf = self;
+    self.outsideClickMonitor = [NSEvent addGlobalMonitorForEventsMatchingMask:(NSEventMaskLeftMouseDown | NSEventMaskRightMouseDown)
+                                                                      handler:^(NSEvent *event) {
+        (void)event;
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf || !strongSelf.popover.isShown) return;
+        [strongSelf.popover performClose:nil];
+    }];
+}
+
+- (void)removeOutsideClickMonitor {
+    if (self.outsideClickMonitor) {
+        [NSEvent removeMonitor:self.outsideClickMonitor];
+        self.outsideClickMonitor = nil;
+    }
+}
+
+// NSPopoverDelegate: Called every time popover is about to show
+- (void)popoverWillShow:(NSNotification *)notification {
+    // Re-assert switch state and green track color on appearance
     self.toggleSwitch.isLocked = self.isLocked;
     if (self.isLocked) {
         self.toggleSwitch.state = NSControlStateValueOff;
@@ -440,9 +617,15 @@ static const BufferPreset BUFFER_PRESETS[7] = {
         self.toggleSwitch.enabled = YES;
     }
     [self.toggleSwitch updateColorsAnimated:NO];
+    [self installOutsideClickMonitor];
+}
+
+- (void)popoverDidClose:(NSNotification *)notification {
+    [self removeOutsideClickMonitor];
 }
 
 - (void)switchToggled:(GreenSwitch *)sender {
+    if (self.isQuitting) return;
     if (self.isLocked) {
         sender.state = NSControlStateValueOff;
         return;
@@ -457,18 +640,22 @@ static const BufferPreset BUFFER_PRESETS[7] = {
 }
 
 - (void)bufferSliderChanged:(NSSlider *)sender {
+    if (self.isQuitting) return;
     int idx = sender.intValue;
     if (idx < 0) idx = 0;
     if (idx > 6) idx = 6;
 
     self.bufferLabel.stringValue = [self formatBufferLabel:idx];
 
-    if (self.callbacks.on_buffer_preset_changed) {
+    NSEvent *event = [NSApp currentEvent];
+    BOOL isDragging = (event && event.type == NSEventTypeLeftMouseDragged);
+    if (!isDragging && self.callbacks.on_buffer_preset_changed) {
         self.callbacks.on_buffer_preset_changed(idx);
     }
 }
 
 - (void)volumeSliderChanged:(NSSlider *)sender {
+    if (self.isQuitting) return;
     float val = sender.floatValue;
     int pct = (int)(val * 100.0f);
     self.inputVolumeLabel.stringValue = [NSString stringWithFormat:@"Input volume: %d%%", pct];
@@ -479,6 +666,7 @@ static const BufferPreset BUFFER_PRESETS[7] = {
 }
 
 - (void)reverbSliderChanged:(NSSlider *)sender {
+    if (self.isQuitting) return;
     float val = sender.floatValue;
     self.reverbLabel.stringValue = [self formatReverbLabel:val];
 
@@ -488,19 +676,51 @@ static const BufferPreset BUFFER_PRESETS[7] = {
 }
 
 - (void)aboutClicked:(id)sender {
+    if (self.popover.isShown) {
+        [self.popover performClose:nil];
+    }
     [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:@"https://github.com/hubert17/MicMirror"]];
 }
 
-- (void)quitClicked:(id)sender {
+- (void)performShutdown {
+    if (self.isQuitting) return;
+    self.isQuitting = YES;
+
+    if (self.pollTimer) {
+        [self.pollTimer invalidate];
+        self.pollTimer = nil;
+    }
+    [self removeOutsideClickMonitor];
+
+    if (self.popover && self.popover.isShown) {
+        [self.popover close];
+    }
+
     if (self.callbacks.on_quit) {
         self.callbacks.on_quit();
     }
-    [NSApp terminate:nil];
+
+    if (self.statusItem) {
+        [[NSStatusBar systemStatusBar] removeStatusItem:self.statusItem];
+        self.statusItem = nil;
+    }
+}
+
+- (void)quitClicked:(id)sender {
+    [self performShutdown];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [NSApp terminate:nil];
+    });
+}
+
+- (void)applicationWillTerminate:(NSNotification *)notification {
+    [self performShutdown];
 }
 
 - (void)updateHeadphoneState:(BOOL)connected deviceName:(const char *)name {
     NSString *dName = (name && strlen(name) > 0) ? [NSString stringWithUTF8String:name] : @"3.5mm Headphone Jack";
     dispatch_async(dispatch_get_main_queue(), ^{
+        if (self.isQuitting) return;
         self.isLocked = !connected;
         self.currentDeviceDisplayName = dName;
         self.toggleSwitch.isLocked = !connected;
@@ -522,6 +742,7 @@ static const BufferPreset BUFFER_PRESETS[7] = {
 
 - (void)updateActive:(BOOL)active {
     dispatch_async(dispatch_get_main_queue(), ^{
+        if (self.isQuitting) return;
         self.isActive = active;
         self.toggleSwitch.state = active ? NSControlStateValueOn : NSControlStateValueOff;
         [self.toggleSwitch updateColorsAnimated:NO];
@@ -548,6 +769,7 @@ void micmirror_ui_init(
                                                           initialInputVol:initial_input_vol
                                                          initialReverbWet:initial_reverb_wet
                                                             initialActive:initial_active];
+    [NSApp setDelegate:g_menuController];
 }
 
 void micmirror_ui_set_headphone_state(bool connected, const char* _Nullable device_name) {

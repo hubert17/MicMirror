@@ -181,6 +181,13 @@ open target/release/MicMirror.app
 
 ---
 
+## Known Issues
+
+- **Flanger / comb-filter effect when adjusting Buffer**: If you notice a flanger or metallic phase effect after changing the Buffer slider, simply toggle the **ON / OFF** switch off and back on.
+- **Buffer tuning tip**: The default is **32 frames** (`SoX Baseline`), which balances ultra-low latency with stability. You can try lowering it to the smallest frame size your Mac handles without audio glitches or skipping.
+
+---
+
 ## Frequently Asked Questions (FAQ)
 
 #### Does this work alongside Zoom, Teams, or Google Meet?

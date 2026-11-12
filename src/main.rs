@@ -46,9 +46,7 @@ extern "C" fn callback_buffer_preset_changed(preset_idx: u32) {
     info!("UI: Buffer preset selected -> index {}", preset_idx);
     unsafe {
         if !GLOBAL_ENGINE.is_null() {
-            if let Err(e) = (*GLOBAL_ENGINE).set_buffer_preset(preset_idx as usize) {
-                error!("Failed to update CoreAudio buffer preset: {}", e);
-            }
+            (*GLOBAL_ENGINE).set_buffer_preset(preset_idx as usize);
         }
     }
 }
@@ -72,29 +70,19 @@ extern "C" fn callback_reverb_changed(wet: f32) {
 extern "C" fn callback_poll_devices() {
     unsafe {
         if !GLOBAL_ENGINE.is_null() {
-            let eng = &mut *GLOBAL_ENGINE;
-
-            // Re-check hardware connection
-            if let Ok(changed) = eng.refresh_devices() {
-                if changed {
-                    let info = eng.device_info();
-                    let connected = matches!(info.headphone_state, HeadphoneState::Connected(_));
-                    let c_name = match &info.headphone_state {
-                        HeadphoneState::Connected(name) => Some(CString::new(name.replace('\0', "")).unwrap_or_default()),
-                        _ => None,
-                    };
-                    micmirror_ui_set_headphone_state(
-                        connected,
-                        c_name.as_ref().map_or(std::ptr::null(), |s| s.as_ptr()),
-                    );
-                }
-            }
+            (*GLOBAL_ENGINE).request_refresh_devices();
         }
     }
 }
 
 extern "C" fn callback_quit() {
     info!("UI: Quit selected");
+    unsafe {
+        if !GLOBAL_ENGINE.is_null() {
+            (*GLOBAL_ENGINE).shutdown();
+            GLOBAL_ENGINE = std::ptr::null_mut();
+        }
+    }
 }
 
 fn main() -> Result<()> {
@@ -105,13 +93,32 @@ fn main() -> Result<()> {
     let initial_preset = DEFAULT_PRESET_INDEX;
     // Leak the Box to ensure the engine lives for the entire process lifetime.
     // micmirror_ui_run() calls [NSApp run] which never returns.
-    let engine = Box::leak(Box::new(match AudioEngine::new(initial_preset) {
-        Ok(eng) => eng,
-        Err(err) => {
-            error!("Failed to initialize audio engine: {:#}", err);
-            std::process::exit(1);
-        }
-    }));
+    let engine = Box::leak(Box::new(
+        match AudioEngine::new(
+            initial_preset,
+            Box::new(|headphone_state| {
+                let connected = matches!(headphone_state, HeadphoneState::Connected(_));
+                let c_name = match headphone_state {
+                    HeadphoneState::Connected(name) => {
+                        Some(CString::new(name.replace('\0', "")).unwrap_or_default())
+                    }
+                    _ => None,
+                };
+                unsafe {
+                    micmirror_ui_set_headphone_state(
+                        connected,
+                        c_name.as_ref().map_or(std::ptr::null(), |s| s.as_ptr()),
+                    );
+                }
+            }),
+        ) {
+            Ok(eng) => eng,
+            Err(err) => {
+                error!("Failed to initialize audio engine: {:#}", err);
+                std::process::exit(1);
+            }
+        },
+    ));
 
     let is_active = engine.is_active();
     let initial_vol = engine.get_input_volume();
